@@ -12,6 +12,7 @@ import {
   checkGameStatus,
   otherPlayer,
 } from '@dama144/engine';
+import { verifyToken, recordMatchResult, type AuthUser } from './supabase';
 
 const PORT = Number(process.env.PORT) || 4000;
 const ORIGIN = process.env.CLIENT_ORIGIN || '*';
@@ -42,8 +43,11 @@ type RoomStatus = 'waiting' | 'pending' | 'playing' | 'finished';
 interface Room {
   code: string;
   hostId: string;
+  hostUser: AuthUser;
   guestId: string | null;
+  guestUser: AuthUser | null;
   pendingRequesterId: string | null;
+  pendingRequesterUser: AuthUser | null;
   status: RoomStatus;
   timeControlMs: number;
   board: Board;
@@ -53,9 +57,14 @@ interface Room {
   lastTickAt: number;
   hasMoved: boolean;
   createdAt: number;
+  resultRecorded: boolean;
 }
 
 const rooms = new Map<string, Room>();
+
+function getUserPromise(socket: Socket): Promise<AuthUser | null> {
+  return (socket.data as { userPromise?: Promise<AuthUser | null> }).userPromise ?? Promise.resolve(null);
+}
 
 function generateCode(): string {
   let code: string;
@@ -77,6 +86,7 @@ function publicRoomsList() {
     .sort((a, b) => a.createdAt - b.createdAt)
     .map((r) => ({
       code: r.code,
+      hostName: r.hostUser.username,
       timeControlMinutes: Math.round(r.timeControlMs / 60000),
       createdAt: r.createdAt,
     }));
@@ -94,6 +104,7 @@ function roomStatePayload(room: Room) {
     clocks: { B: room.clocks.B, N: room.clocks.N },
     timeControlMinutes: Math.round(room.timeControlMs / 60000),
     status: room.status,
+    names: { B: room.hostUser.username, N: room.guestUser?.username ?? 'Jugador' },
   };
 }
 
@@ -103,9 +114,24 @@ function colorOf(room: Room, socketId: string): Player | null {
   return null;
 }
 
-function endRoomByTimeout(room: Room) {
+async function finishGame(room: Room, winner: Player, reason: string) {
+  if (room.resultRecorded) return;
+  room.resultRecorded = true;
   room.status = 'finished';
+  if (room.guestUser) {
+    await recordMatchResult({
+      hostUser: room.hostUser,
+      guestUser: room.guestUser,
+      winnerColor: winner,
+      reason,
+      timeControlMinutes: Math.round(room.timeControlMs / 60000),
+    });
+  }
+}
+
+async function endRoomByTimeout(room: Room) {
   const winner = otherPlayer(room.turn);
+  await finishGame(room, winner, 'timeout');
   io.to(room.code).emit('state', roomStatePayload(room));
   io.to(room.code).emit('game-over', { winner, reason: 'timeout' });
 }
@@ -130,6 +156,9 @@ setInterval(() => {
 }, 1000);
 
 io.on('connection', (socket: Socket) => {
+  const token = (socket.handshake.auth as { token?: string } | undefined)?.token;
+  (socket.data as { userPromise: Promise<AuthUser | null> }).userPromise = verifyToken(token);
+
   socket.on('join-lobby', () => {
     socket.join(LOBBY_ROOM);
     socket.emit('lobby-update', publicRoomsList());
@@ -139,15 +168,23 @@ io.on('connection', (socket: Socket) => {
     socket.leave(LOBBY_ROOM);
   });
 
-  socket.on('create-room', ({ timeControlMinutes }: { timeControlMinutes: number }) => {
+  socket.on('create-room', async ({ timeControlMinutes }: { timeControlMinutes: number }) => {
+    const user = await getUserPromise(socket);
+    if (!user) {
+      socket.emit('auth-error', { message: 'Debes iniciar sesión para crear una sala en línea.' });
+      return;
+    }
     const minutes = Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, Math.round(timeControlMinutes) || 15));
     const code = generateCode();
     const timeControlMs = minutes * 60000;
     const room: Room = {
       code,
       hostId: socket.id,
+      hostUser: user,
       guestId: null,
+      guestUser: null,
       pendingRequesterId: null,
+      pendingRequesterUser: null,
       status: 'waiting',
       timeControlMs,
       board: createInitialBoard(),
@@ -157,6 +194,7 @@ io.on('connection', (socket: Socket) => {
       lastTickAt: Date.now(),
       hasMoved: false,
       createdAt: Date.now(),
+      resultRecorded: false,
     };
     rooms.set(code, room);
     socket.join(code);
@@ -164,7 +202,12 @@ io.on('connection', (socket: Socket) => {
     broadcastLobby();
   });
 
-  socket.on('request-join', ({ code }: { code: string }) => {
+  socket.on('request-join', async ({ code }: { code: string }) => {
+    const user = await getUserPromise(socket);
+    if (!user) {
+      socket.emit('auth-error', { message: 'Debes iniciar sesión para unirte a una sala.' });
+      return;
+    }
     const room = rooms.get(code);
     if (!room || room.status !== 'waiting') {
       socket.emit('room-error', { message: 'Esa sala ya no está disponible.' });
@@ -172,8 +215,9 @@ io.on('connection', (socket: Socket) => {
     }
     room.status = 'pending';
     room.pendingRequesterId = socket.id;
+    room.pendingRequesterUser = user;
     socket.join(code);
-    io.to(room.hostId).emit('join-request', { code });
+    io.to(room.hostId).emit('join-request', { code, name: user.username });
     socket.emit('join-request-sent', { code });
     broadcastLobby();
   });
@@ -182,6 +226,7 @@ io.on('connection', (socket: Socket) => {
     const room = rooms.get(code);
     if (!room || room.pendingRequesterId !== socket.id) return;
     room.pendingRequesterId = null;
+    room.pendingRequesterUser = null;
     room.status = 'waiting';
     socket.leave(code);
     broadcastLobby();
@@ -189,14 +234,26 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('accept-join', ({ code }: { code: string }) => {
     const room = rooms.get(code);
-    if (!room || room.hostId !== socket.id || !room.pendingRequesterId) return;
+    if (!room || room.hostId !== socket.id || !room.pendingRequesterId || !room.pendingRequesterUser) return;
     room.guestId = room.pendingRequesterId;
+    room.guestUser = room.pendingRequesterUser;
     room.pendingRequesterId = null;
+    room.pendingRequesterUser = null;
     room.status = 'playing';
     room.lastTickAt = Date.now();
     const minutes = Math.round(room.timeControlMs / 60000);
-    io.to(room.guestId).emit('joined-match', { code, color: 'N' as Player, timeControlMinutes: minutes });
-    socket.emit('joined-match', { code, color: 'B' as Player, timeControlMinutes: minutes });
+    io.to(room.guestId).emit('joined-match', {
+      code,
+      color: 'N' as Player,
+      timeControlMinutes: minutes,
+      opponentName: room.hostUser.username,
+    });
+    socket.emit('joined-match', {
+      code,
+      color: 'B' as Player,
+      timeControlMinutes: minutes,
+      opponentName: room.guestUser.username,
+    });
     io.to(code).emit('state', roomStatePayload(room));
   });
 
@@ -209,6 +266,7 @@ io.on('connection', (socket: Socket) => {
       io.sockets.sockets.get(rid)?.leave(code);
     }
     room.pendingRequesterId = null;
+    room.pendingRequesterUser = null;
     room.status = 'waiting';
     broadcastLobby();
   });
@@ -222,7 +280,7 @@ io.on('connection', (socket: Socket) => {
     cleanupRoom(code);
   });
 
-  socket.on('move', ({ code, seq }: { code: string; seq: Sequence }) => {
+  socket.on('move', async ({ code, seq }: { code: string; seq: Sequence }) => {
     const room = rooms.get(code);
     if (!room || room.status !== 'playing') return;
     const color = colorOf(room, socket.id);
@@ -236,7 +294,7 @@ io.on('connection', (socket: Socket) => {
       const remaining = room.clocks[color] - elapsed;
       if (remaining <= 0) {
         room.clocks[color] = 0;
-        endRoomByTimeout(room);
+        await endRoomByTimeout(room);
         return;
       }
       room.clocks[color] = remaining;
@@ -261,36 +319,35 @@ io.on('connection', (socket: Socket) => {
 
     const status = checkGameStatus(room.board, room.turn);
     if (status.over) {
-      room.status = 'finished';
+      await finishGame(room, status.winner, status.reason);
       io.to(code).emit('game-over', { winner: status.winner, reason: status.reason });
     }
   });
 
-  socket.on('leave-match', ({ code }: { code: string }) => {
+  socket.on('leave-match', async ({ code }: { code: string }) => {
     const room = rooms.get(code);
     if (!room) return;
-    if (room.hostId === socket.id || room.guestId === socket.id) {
-      room.status = 'finished';
+    const color = colorOf(room, socket.id);
+    if (color && room.status === 'playing') {
+      await finishGame(room, otherPlayer(color), 'forfeit');
       io.to(code).emit('opponent-left');
     }
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     for (const room of rooms.values()) {
-      if (room.hostId === socket.id) {
-        if (room.status === 'playing') {
+      const color = colorOf(room, socket.id);
+      if (room.hostId === socket.id || room.guestId === socket.id) {
+        if (room.status === 'playing' && color) {
+          await finishGame(room, otherPlayer(color), 'forfeit');
           io.to(room.code).emit('opponent-left');
         }
         cleanupRoom(room.code);
       } else if (room.pendingRequesterId === socket.id) {
         room.pendingRequesterId = null;
+        room.pendingRequesterUser = null;
         room.status = 'waiting';
         broadcastLobby();
-      } else if (room.guestId === socket.id) {
-        if (room.status === 'playing') {
-          io.to(room.code).emit('opponent-left');
-        }
-        cleanupRoom(room.code);
       }
     }
   });

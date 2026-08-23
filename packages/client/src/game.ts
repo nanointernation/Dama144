@@ -48,16 +48,22 @@ export class GameController {
   myColor: Player | null = null;
   /** En modo ai: el color que juega la maquina. */
   aiColor: Player | null = null;
+  /** En modo online: apodo del rival, para mostrarlo en vez de solo "Blancas"/"Negras". */
+  opponentName: string | null = null;
 
   clock: ChessClock = new ChessClock(DEFAULT_TIME_CONTROL_MINUTES * 60000);
   timeControlMinutes: number = DEFAULT_TIME_CONTROL_MINUTES;
 
   constructor(private cb: GameCallbacks) {}
 
-  reset(mode: Mode, opts: { myColor?: Player; aiColor?: Player; timeControlMinutes?: number } = {}) {
+  reset(
+    mode: Mode,
+    opts: { myColor?: Player; aiColor?: Player; timeControlMinutes?: number; opponentName?: string } = {}
+  ) {
     this.mode = mode;
     this.myColor = opts.myColor ?? null;
     this.aiColor = opts.aiColor ?? null;
+    this.opponentName = opts.opponentName ?? null;
     this.timeControlMinutes = opts.timeControlMinutes ?? DEFAULT_TIME_CONTROL_MINUTES;
     this.board = createInitialBoard();
     this.turn = 'B';

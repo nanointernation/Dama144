@@ -18,6 +18,28 @@
   <section id="menuScreen" class="panel-card menu-card">
     <h2 class="menu-heading">Elige un modo de juego</h2>
 
+    <!-- CUENTA / SESION -->
+    <div class="menu-group" id="authLoggedOut">
+      <div class="menu-group-label" id="authFormTitle">Iniciar sesión</div>
+      <input class="input-code" id="authEmailInput" placeholder="Correo" type="email" style="width:100%; margin-bottom:8px;" />
+      <input class="input-code" id="authPasswordInput" placeholder="Contraseña" type="password" style="width:100%; margin-bottom:8px;" />
+      <input class="input-code" id="authUsernameInput" placeholder="Nombre de usuario" style="width:100%; margin-bottom:8px; display:none;" />
+      <div class="menu-row">
+        <button class="btn btn-primary" id="authSubmitBtn">Iniciar sesión</button>
+      </div>
+      <button class="btn" id="authToggleModeBtn" style="margin-top:6px;">¿No tienes cuenta? Regístrate</button>
+      <div class="status-line" id="authStatus"></div>
+    </div>
+
+    <div class="menu-group" id="authLoggedIn" style="display:none;">
+      <div class="menu-group-label">Tu cuenta</div>
+      <div class="status-line" id="profileLine"></div>
+      <div class="menu-row">
+        <button class="btn" id="leaderboardBtn">Top de jugadores</button>
+        <button class="btn" id="signOutBtn">Cerrar sesión</button>
+      </div>
+    </div>
+
     <div class="menu-group">
       <div class="menu-group-label">Tiempo por jugador: <span id="timeControlValue">15 min</span></div>
       <input type="range" id="timeControlSlider" min="10" max="60" step="5" value="15" class="time-slider" />
@@ -79,6 +101,7 @@
           <div class="turn-dot" id="turnDot"></div>
           <div class="turn-label" id="turnLabel">Turno: Blancas</div>
         </div>
+        <div class="status-line" id="vsLabel" style="display:none;"></div>
         <div class="status-line" id="statusLine">Selecciona una ficha para comenzar.</div>
         <div class="counts">
           <span>Blancas: <b id="countB">30</b></span>
@@ -157,6 +180,17 @@
       <div class="settings-actions">
         <button class="btn" id="resetColorsBtn">Restaurar colores originales</button>
         <button class="btn btn-primary" id="closeSettingsBtn">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TOP DE JUGADORES -->
+  <div class="overlay" id="leaderboardOverlay">
+    <div class="overlay-card settings-card">
+      <h2 class="settings-title">Top de jugadores</h2>
+      <div id="leaderboardList" class="rooms-list" style="max-height:320px;"></div>
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="closeLeaderboardBtn">Cerrar</button>
       </div>
     </div>
   </div>

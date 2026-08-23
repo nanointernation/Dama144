@@ -4,6 +4,7 @@ import { renderBoard } from './render';
 import { NetworkClient, type RoomStateMsg, type LobbyRoom } from './network';
 import { formatClock } from './clock';
 import { initTheme, updateTheme, resetTheme, type ThemeColors } from './theme';
+import { signUp, signIn, signOut, getSession, onAuthStateChange, getMyProfile, getLeaderboard, type Profile } from './auth';
 
 const menuScreen = document.getElementById('menuScreen')!;
 const gameScreen = document.getElementById('gameScreen')!;
@@ -19,6 +20,122 @@ const overlayTitle = document.getElementById('overlayTitle')!;
 const overlayText = document.getElementById('overlayText')!;
 const onlineStatus = document.getElementById('onlineStatus')!;
 const connStatus = document.getElementById('connStatus')!;
+const vsLabel = document.getElementById('vsLabel')!;
+
+// ===== Cuenta / autenticacion =====
+const authLoggedOut = document.getElementById('authLoggedOut')!;
+const authLoggedIn = document.getElementById('authLoggedIn')!;
+const authFormTitle = document.getElementById('authFormTitle')!;
+const authEmailInput = document.getElementById('authEmailInput') as HTMLInputElement;
+const authPasswordInput = document.getElementById('authPasswordInput') as HTMLInputElement;
+const authUsernameInput = document.getElementById('authUsernameInput') as HTMLInputElement;
+const authSubmitBtn = document.getElementById('authSubmitBtn') as HTMLButtonElement;
+const authToggleModeBtn = document.getElementById('authToggleModeBtn')!;
+const authStatus = document.getElementById('authStatus')!;
+const profileLine = document.getElementById('profileLine')!;
+const signOutBtn = document.getElementById('signOutBtn')!;
+const leaderboardBtn = document.getElementById('leaderboardBtn')!;
+const leaderboardOverlay = document.getElementById('leaderboardOverlay')!;
+const leaderboardList = document.getElementById('leaderboardList')!;
+const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn')!;
+
+let isRegisterMode = false;
+let myProfile: Profile | null = null;
+let myAccessToken: string | null = null;
+
+function setAuthMode(register: boolean) {
+  isRegisterMode = register;
+  authFormTitle.textContent = register ? 'Crear cuenta' : 'Iniciar sesión';
+  authSubmitBtn.textContent = register ? 'Registrarse' : 'Iniciar sesión';
+  authUsernameInput.style.display = register ? 'block' : 'none';
+  authToggleModeBtn.textContent = register ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate';
+  authStatus.textContent = '';
+}
+
+authToggleModeBtn.addEventListener('click', () => setAuthMode(!isRegisterMode));
+
+authSubmitBtn.addEventListener('click', async () => {
+  const email = authEmailInput.value.trim();
+  const password = authPasswordInput.value;
+  if (!email || !password) {
+    authStatus.textContent = 'Completa correo y contraseña.';
+    authStatus.className = 'status-line warn';
+    return;
+  }
+  authSubmitBtn.disabled = true;
+  if (isRegisterMode) {
+    const username = authUsernameInput.value.trim();
+    if (!username) {
+      authStatus.textContent = 'Elige un nombre de usuario.';
+      authStatus.className = 'status-line warn';
+      authSubmitBtn.disabled = false;
+      return;
+    }
+    const { error } = await signUp(email, password, username);
+    if (error) {
+      authStatus.textContent = error.message;
+      authStatus.className = 'status-line warn';
+    } else {
+      authStatus.textContent = 'Cuenta creada. Revisa tu correo para confirmar antes de iniciar sesión.';
+      authStatus.className = 'status-line';
+      setAuthMode(false);
+    }
+  } else {
+    const { error } = await signIn(email, password);
+    if (error) {
+      authStatus.textContent = error.message;
+      authStatus.className = 'status-line warn';
+    }
+  }
+  authSubmitBtn.disabled = false;
+});
+
+signOutBtn.addEventListener('click', async () => {
+  await signOut();
+});
+
+async function refreshAuthUI() {
+  const session = await getSession();
+  if (session) {
+    myAccessToken = session.access_token;
+    myProfile = await getMyProfile(session.user.id);
+    network.setToken(myAccessToken);
+    authLoggedOut.style.display = 'none';
+    authLoggedIn.style.display = 'block';
+    if (myProfile) {
+      profileLine.textContent = `${myProfile.username} · Elo ${myProfile.elo} · ${myProfile.wins}V-${myProfile.losses}D`;
+    }
+  } else {
+    myAccessToken = null;
+    myProfile = null;
+    network.setToken(null);
+    authLoggedOut.style.display = 'block';
+    authLoggedIn.style.display = 'none';
+  }
+}
+
+onAuthStateChange(() => {
+  refreshAuthUI();
+});
+
+leaderboardBtn.addEventListener('click', async () => {
+  const top = await getLeaderboard(20);
+  leaderboardList.innerHTML = '';
+  if (top.length === 0) {
+    leaderboardList.innerHTML = '<div class="status-line">Aún no hay jugadores registrados.</div>';
+  }
+  top.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'room-row';
+    row.innerHTML = `<span>#${i + 1} ${p.username}</span><span>Elo ${p.elo} · ${p.wins}V-${p.losses}D</span>`;
+    leaderboardList.appendChild(row);
+  });
+  leaderboardOverlay.classList.add('show');
+});
+
+closeLeaderboardBtn.addEventListener('click', () => {
+  leaderboardOverlay.classList.remove('show');
+});
 
 const timeControlSlider = document.getElementById('timeControlSlider') as HTMLInputElement;
 const timeControlValue = document.getElementById('timeControlValue')!;
@@ -98,6 +215,14 @@ const game = new GameController({
     countN.textContent = String(cN);
     turnLabel.textContent = 'Turno: ' + playerName(game.turn);
     turnDot.className = 'turn-dot ' + game.turn;
+    if (game.mode === 'online' && game.opponentName && myProfile) {
+      const meLabel = playerName(game.myColor!) + ' (' + myProfile.username + ')';
+      const rivalLabel = playerName(game.myColor === 'B' ? 'N' : 'B') + ' (' + game.opponentName + ')';
+      vsLabel.textContent = `${meLabel} vs ${rivalLabel}`;
+      vsLabel.style.display = 'block';
+    } else {
+      vsLabel.style.display = 'none';
+    }
     renderClockDisplay();
   },
   onStatus: (text, warn) => {
@@ -111,9 +236,12 @@ const game = new GameController({
     if (reason === 'timeout') {
       const loser = winner === 'B' ? 'N' : 'B';
       overlayText.textContent = `${playerName(loser)} se quedó sin tiempo.`;
+    } else if (reason === 'forfeit') {
+      overlayText.textContent = 'El otro jugador abandonó la partida.';
     } else {
       overlayText.textContent = 'No hay movimientos legales disponibles para el otro jugador.';
     }
+    if (game.mode === 'online') refreshAuthUI(); // refresca el Elo mostrado tras la partida
     overlay.classList.add('show');
   },
   onLocalMoveChosen: (seq: Sequence) => {
@@ -182,11 +310,16 @@ function renderRoomsList(rooms: LobbyRoom[]) {
     const row = document.createElement('div');
     row.className = 'room-row';
     const label = document.createElement('span');
-    label.textContent = `Sala · ${room.timeControlMinutes} min`;
+    label.textContent = `${room.hostName} · ${room.timeControlMinutes} min`;
     const btn = document.createElement('button');
     btn.className = 'btn';
     btn.textContent = 'Pedir unirse';
     btn.addEventListener('click', () => {
+      if (!myAccessToken) {
+        onlineStatus.textContent = 'Inicia sesión para jugar en línea.';
+        onlineStatus.className = 'status-line warn';
+        return;
+      }
       currentRoomCode = room.code;
       network.requestJoin(room.code);
       resetOnlineSubcards();
@@ -217,10 +350,11 @@ const network = new NetworkClient({
   onJoinRequestSent: () => {
     // el estado visual ya se mostró al hacer clic en "Pedir unirse"
   },
-  onJoinRequestReceived: () => {
+  onJoinRequestReceived: (code, requesterName) => {
     resetOnlineSubcards();
     createRoomBtn.disabled = true;
     joinRequestCard.style.display = 'flex';
+    joinRequestCard.querySelector('.status-line')!.textContent = `${requesterName} quiere unirse a tu sala.`;
   },
   onJoinRejected: () => {
     resetOnlineSubcards();
@@ -228,14 +362,14 @@ const network = new NetworkClient({
     onlineStatus.className = 'status-line warn';
     currentRoomCode = null;
   },
-  onMatchStarted: (code, color, timeControlMinutes) => {
+  onMatchStarted: (code, color, timeControlMinutes, opponentName) => {
     currentRoomCode = code;
     resetOnlineSubcards();
     onlineStatus.textContent = '';
     showScreen('game');
     overlay.classList.remove('show');
     logEl.innerHTML = '';
-    game.reset('online', { myColor: color, timeControlMinutes });
+    game.reset('online', { myColor: color, timeControlMinutes, opponentName });
     startClockInterval();
   },
   onState: (state: RoomStateMsg) => {
@@ -251,6 +385,7 @@ const network = new NetworkClient({
     overlayText.textContent = 'Tu oponente se desconectó.';
     overlay.classList.add('show');
     currentRoomCode = null;
+    refreshAuthUI();
   },
   onError: (message) => {
     onlineStatus.textContent = message;
@@ -263,8 +398,14 @@ const network = new NetworkClient({
 });
 
 network.joinLobby();
+refreshAuthUI();
 
 createRoomBtn.addEventListener('click', () => {
+  if (!myAccessToken) {
+    onlineStatus.textContent = 'Inicia sesión para crear una sala.';
+    onlineStatus.className = 'status-line warn';
+    return;
+  }
   network.createRoom(pendingTimeControlMinutes);
 });
 
