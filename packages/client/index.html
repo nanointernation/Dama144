@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Dama 144</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Vollkorn:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <h1 class="title">Dama 144</h1>
+  <div class="subtitle">Tablero 12 × 12 · 30 fichas por jugador</div>
+
+  <!-- PANTALLA: MENU -->
+  <section id="menuScreen" class="panel-card menu-card">
+    <h2 class="menu-heading">Elige un modo de juego</h2>
+
+    <button class="btn btn-primary" id="modeLocalBtn">Jugar local (2 jugadores)</button>
+
+    <div class="menu-group">
+      <div class="menu-group-label">Contra la IA</div>
+      <div class="menu-row">
+        <button class="btn" data-diff="facil">Fácil</button>
+        <button class="btn" data-diff="media">Media</button>
+        <button class="btn" data-diff="dificil">Difícil</button>
+      </div>
+    </div>
+
+    <div class="menu-group">
+      <div class="menu-group-label">En línea</div>
+      <div class="menu-row">
+        <button class="btn" id="createRoomBtn">Crear sala</button>
+        <input class="input-code" id="joinCodeInput" placeholder="Código" maxlength="6" />
+        <button class="btn" id="joinRoomBtn">Unirse</button>
+      </div>
+      <div class="status-line" id="onlineStatus"></div>
+    </div>
+  </section>
+
+  <!-- PANTALLA: JUEGO -->
+  <section id="gameScreen" class="layout" style="display:none;">
+    <div class="board-frame">
+      <div class="corner-tr"></div><div class="corner-bl"></div>
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="side-panel">
+      <div class="panel-card">
+        <div class="turn-row">
+          <div class="turn-dot" id="turnDot"></div>
+          <div class="turn-label" id="turnLabel">Turno: Blancas</div>
+        </div>
+        <div class="status-line" id="statusLine">Selecciona una ficha para comenzar.</div>
+        <div class="counts">
+          <span>Blancas: <b id="countB">30</b></span>
+          <span>Negras: <b id="countN">30</b></span>
+        </div>
+      </div>
+
+      <div class="panel-card" id="roomCodeCard" style="display:none;">
+        <div class="menu-group-label">Código de sala</div>
+        <div class="room-code" id="roomCodeLabel">------</div>
+        <div class="status-line" id="roomStatus"></div>
+      </div>
+
+      <div class="panel-card">
+        <button class="btn" id="restartBtn">Reiniciar partida</button>
+        <button class="btn" id="backToMenuBtn" style="margin-top:8px;">Volver al menú</button>
+      </div>
+
+      <div class="panel-card rules-card">
+        <h3>Reglas activas</h3>
+        <ul>
+          <li>Captura obligatoria.</li>
+          <li>Debe capturarse la mayor cantidad posible de fichas.</li>
+          <li>Las fichas simples capturan hacia adelante y hacia atrás.</li>
+          <li>Al llegar a la última fila, la ficha corona como Dama.</li>
+          <li>La Dama se mueve y captura a cualquier distancia en diagonal.</li>
+        </ul>
+      </div>
+
+      <div class="panel-card">
+        <h3 class="log-heading">Historial</h3>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="overlay" id="overlay">
+    <div class="overlay-card">
+      <h2 id="overlayTitle">¡Partida terminada!</h2>
+      <div id="overlayText" class="overlay-text"></div>
+      <button class="btn" id="overlayRestart">Jugar de nuevo</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
