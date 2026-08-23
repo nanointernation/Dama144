@@ -51,6 +51,7 @@ interface Room {
   lastMove: LastMove | null;
   clocks: { B: number; N: number };
   lastTickAt: number;
+  hasMoved: boolean;
   createdAt: number;
 }
 
@@ -118,7 +119,7 @@ function cleanupRoom(code: string) {
 setInterval(() => {
   const now = Date.now();
   for (const room of rooms.values()) {
-    if (room.status !== 'playing') continue;
+    if (room.status !== 'playing' || !room.hasMoved) continue;
     const elapsed = now - room.lastTickAt;
     const remaining = room.clocks[room.turn] - elapsed;
     if (remaining <= 0) {
@@ -154,6 +155,7 @@ io.on('connection', (socket: Socket) => {
       lastMove: null,
       clocks: { B: timeControlMs, N: timeControlMs },
       lastTickAt: Date.now(),
+      hasMoved: false,
       createdAt: Date.now(),
     };
     rooms.set(code, room);
@@ -227,13 +229,19 @@ io.on('connection', (socket: Socket) => {
     if (!color || color !== room.turn) return;
 
     const now = Date.now();
-    const elapsed = now - room.lastTickAt;
-    const remaining = room.clocks[color] - elapsed;
-    if (remaining <= 0) {
-      room.clocks[color] = 0;
-      endRoomByTimeout(room);
-      return;
+
+    if (room.hasMoved) {
+      // A partir de la segunda jugada, el tiempo transcurrido SI se descuenta.
+      const elapsed = now - room.lastTickAt;
+      const remaining = room.clocks[color] - elapsed;
+      if (remaining <= 0) {
+        room.clocks[color] = 0;
+        endRoomByTimeout(room);
+        return;
+      }
+      room.clocks[color] = remaining;
     }
+    // La primera jugada de la partida no descuenta tiempo de nadie.
 
     const legal = legalMovesForPlayer(room.board, room.turn);
     const match = legal.sequences.find((s) => sequencesEqual(s, seq));
@@ -242,12 +250,12 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    room.clocks[color] = remaining;
     const lastStep = match.steps[match.steps.length - 1];
     room.board = applySequence(room.board, match);
     room.lastMove = { r: lastStep.toR, c: lastStep.toC, fromR: match.startR, fromC: match.startC };
     room.turn = otherPlayer(room.turn);
     room.lastTickAt = now;
+    room.hasMoved = true;
 
     io.to(code).emit('state', roomStatePayload(room));
 

@@ -65,8 +65,9 @@ export class GameController {
     this.gameOver = false;
     this.lastMove = null;
     this.clock = new ChessClock(this.timeControlMinutes * 60000);
+    // El reloj NO arranca todavia: el tiempo empieza a correr recien despues
+    // de la primera jugada (la primera jugada es "gratis", sin descuento).
     this.refreshLegal();
-    if (mode !== 'online') this.clock.start(this.turn);
     this.render();
     this.maybeTriggerAi();
   }
@@ -84,7 +85,10 @@ export class GameController {
     this.selected = null;
     this.lastMove = lastMove;
     this.clock.setRemaining(clocks);
-    if (status === 'playing' && !this.gameOver) {
+    // El reloj solo corre si la partida esta en curso Y ya se jugo al menos
+    // una jugada (lastMove !== null). Antes de la primera jugada, se muestra
+    // el tiempo completo sin descontar.
+    if (status === 'playing' && lastMove !== null && !this.gameOver) {
       this.clock.start(turn);
     } else {
       this.clock.stop();
@@ -248,6 +252,8 @@ export class GameController {
     this.turn = this.turn === 'B' ? 'N' : 'B';
     this.refreshLegal();
     if (!this.checkGameOver()) {
+      // A partir de aqui ya se jugo al menos una jugada: el reloj arranca
+      // (o continua) para quien tenga el turno ahora.
       this.clock.start(this.turn);
       this.render();
       this.updateStatus();

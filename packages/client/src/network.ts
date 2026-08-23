@@ -29,13 +29,30 @@ export interface NetworkCallbacks {
   onGameOver: (winner: Player, reason: string) => void;
   onOpponentLeft: () => void;
   onError: (message: string) => void;
+  onConnected?: () => void;
+  onDisconnected?: () => void;
 }
 
 export class NetworkClient {
   private socket: Socket;
 
   constructor(private cb: NetworkCallbacks) {
-    this.socket = io(SERVER_URL, { autoConnect: true });
+    console.info('[Dama144] Conectando al servidor:', SERVER_URL);
+    this.socket = io(SERVER_URL, { autoConnect: true, reconnectionAttempts: Infinity });
+
+    this.socket.on('connect', () => {
+      console.info('[Dama144] Conectado al servidor. socket id:', this.socket.id);
+      cb.onConnected?.();
+      this.socket.emit('join-lobby');
+    });
+    this.socket.on('disconnect', (reason) => {
+      console.warn('[Dama144] Desconectado del servidor:', reason);
+      cb.onDisconnected?.();
+    });
+    this.socket.on('connect_error', (err) => {
+      console.error('[Dama144] Error de conexion a', SERVER_URL, '->', err.message);
+      cb.onError(`No se pudo conectar a ${SERVER_URL} (${err.message}).`);
+    });
 
     this.socket.on('lobby-update', (rooms: LobbyRoom[]) => cb.onLobbyUpdate(rooms));
     this.socket.on('room-created', (data: { code: string; color: Player; timeControlMinutes: number }) => {
@@ -51,7 +68,6 @@ export class NetworkClient {
     this.socket.on('game-over', (data: { winner: Player; reason: string }) => cb.onGameOver(data.winner, data.reason));
     this.socket.on('opponent-left', () => cb.onOpponentLeft());
     this.socket.on('room-error', (data: { message: string }) => cb.onError(data.message));
-    this.socket.on('connect_error', () => cb.onError('No se pudo conectar al servidor. Reintentando…'));
   }
 
   joinLobby() {

@@ -18,6 +18,7 @@ const overlay = document.getElementById('overlay')!;
 const overlayTitle = document.getElementById('overlayTitle')!;
 const overlayText = document.getElementById('overlayText')!;
 const onlineStatus = document.getElementById('onlineStatus')!;
+const connStatus = document.getElementById('connStatus')!;
 
 const timeControlSlider = document.getElementById('timeControlSlider') as HTMLInputElement;
 const timeControlValue = document.getElementById('timeControlValue')!;
@@ -174,9 +175,10 @@ document.querySelectorAll<HTMLButtonElement>('[data-diff]').forEach((btn) => {
 
 // ===== Red / lobby en línea =====
 function renderRoomsList(rooms: LobbyRoom[]) {
+  const visibleRooms = rooms.filter((r) => r.code !== currentRoomCode);
   roomsList.querySelectorAll('.room-row').forEach((el) => el.remove());
-  roomsEmptyMsg.style.display = rooms.length === 0 ? 'block' : 'none';
-  for (const room of rooms) {
+  roomsEmptyMsg.style.display = visibleRooms.length === 0 ? 'block' : 'none';
+  for (const room of visibleRooms) {
     const row = document.createElement('div');
     row.className = 'room-row';
     const label = document.createElement('span');
@@ -197,6 +199,14 @@ function renderRoomsList(rooms: LobbyRoom[]) {
 }
 
 const network = new NetworkClient({
+  onConnected: () => {
+    connStatus.textContent = 'Conectado al servidor.';
+    connStatus.className = 'status-line';
+  },
+  onDisconnected: () => {
+    connStatus.textContent = 'Sin conexión al servidor. Reintentando…';
+    connStatus.className = 'status-line warn';
+  },
   onLobbyUpdate: (rooms) => renderRoomsList(rooms),
   onRoomCreated: (code) => {
     currentRoomCode = code;
@@ -245,6 +255,10 @@ const network = new NetworkClient({
   onError: (message) => {
     onlineStatus.textContent = message;
     onlineStatus.className = 'status-line warn';
+    if (message.toLowerCase().includes('conectar')) {
+      connStatus.textContent = message;
+      connStatus.className = 'status-line warn';
+    }
   },
 });
 
