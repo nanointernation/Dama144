@@ -9,12 +9,19 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
+  <button class="settings-fab" id="settingsBtn" title="Personalizar colores" aria-label="Personalizar colores">⚙</button>
+
   <h1 class="title">Dama 144</h1>
   <div class="subtitle">Tablero 12 × 12 · 30 fichas por jugador</div>
 
   <!-- PANTALLA: MENU -->
   <section id="menuScreen" class="panel-card menu-card">
     <h2 class="menu-heading">Elige un modo de juego</h2>
+
+    <div class="menu-group">
+      <div class="menu-group-label">Tiempo por jugador: <span id="timeControlValue">15 min</span></div>
+      <input type="range" id="timeControlSlider" min="10" max="60" step="5" value="15" class="time-slider" />
+    </div>
 
     <button class="btn btn-primary" id="modeLocalBtn">Jugar local (2 jugadores)</button>
 
@@ -29,11 +36,31 @@
 
     <div class="menu-group">
       <div class="menu-group-label">En línea</div>
-      <div class="menu-row">
-        <button class="btn" id="createRoomBtn">Crear sala</button>
-        <input class="input-code" id="joinCodeInput" placeholder="Código" maxlength="6" />
-        <button class="btn" id="joinRoomBtn">Unirse</button>
+      <button class="btn" id="createRoomBtn">Crear sala</button>
+
+      <div id="hostWaitingCard" class="online-subcard" style="display:none;">
+        <div class="status-line">Sala creada. Esperando a que alguien se una…</div>
+        <button class="btn" id="cancelHostBtn">Cancelar sala</button>
       </div>
+
+      <div id="joinRequestCard" class="online-subcard" style="display:none;">
+        <div class="status-line">Un jugador quiere unirse a tu sala.</div>
+        <div class="menu-row">
+          <button class="btn btn-primary" id="acceptJoinBtn">Aceptar</button>
+          <button class="btn" id="rejectJoinBtn">Rechazar</button>
+        </div>
+      </div>
+
+      <div id="joinPendingCard" class="online-subcard" style="display:none;">
+        <div class="status-line">Esperando aprobación del anfitrión…</div>
+        <button class="btn" id="cancelJoinBtn">Cancelar solicitud</button>
+      </div>
+
+      <div class="menu-group-label" style="margin-top:14px;">Salas disponibles</div>
+      <div id="roomsList" class="rooms-list">
+        <div class="status-line" id="roomsEmptyMsg">No hay salas abiertas por ahora.</div>
+      </div>
+
       <div class="status-line" id="onlineStatus"></div>
     </div>
   </section>
@@ -58,10 +85,15 @@
         </div>
       </div>
 
-      <div class="panel-card" id="roomCodeCard" style="display:none;">
-        <div class="menu-group-label">Código de sala</div>
-        <div class="room-code" id="roomCodeLabel">------</div>
-        <div class="status-line" id="roomStatus"></div>
+      <div class="panel-card">
+        <div class="clock-row" id="clockRowB">
+          <span class="clock-label">⏱ Blancas</span>
+          <span class="clock-value" id="clockB">15:00</span>
+        </div>
+        <div class="clock-row" id="clockRowN">
+          <span class="clock-label">⏱ Negras</span>
+          <span class="clock-value" id="clockN">15:00</span>
+        </div>
       </div>
 
       <div class="panel-card">
@@ -92,6 +124,39 @@
       <h2 id="overlayTitle">¡Partida terminada!</h2>
       <div id="overlayText" class="overlay-text"></div>
       <button class="btn" id="overlayRestart">Jugar de nuevo</button>
+    </div>
+  </div>
+
+  <!-- MODAL: PERSONALIZAR COLORES -->
+  <div class="overlay" id="settingsOverlay">
+    <div class="overlay-card settings-card">
+      <h2 class="settings-title">Personalizar colores</h2>
+      <div class="color-grid">
+        <label class="color-row">
+          <span>Casilla clara</span>
+          <input type="color" id="colorLightSquare" />
+        </label>
+        <label class="color-row">
+          <span>Casilla oscura</span>
+          <input type="color" id="colorDarkSquare" />
+        </label>
+        <label class="color-row">
+          <span>Fichas Blancas</span>
+          <input type="color" id="colorPieceB" />
+        </label>
+        <label class="color-row">
+          <span>Fichas Negras</span>
+          <input type="color" id="colorPieceN" />
+        </label>
+        <label class="color-row">
+          <span>Color de acento</span>
+          <input type="color" id="colorAccent" />
+        </label>
+      </div>
+      <div class="settings-actions">
+        <button class="btn" id="resetColorsBtn">Restaurar colores originales</button>
+        <button class="btn btn-primary" id="closeSettingsBtn">Listo</button>
+      </div>
     </div>
   </div>
 

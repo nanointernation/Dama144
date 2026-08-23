@@ -10,6 +10,7 @@ import {
   legalMovesForPlayer,
   applySequence,
   checkGameStatus,
+  otherPlayer,
 } from '@dama144/engine';
 
 const PORT = Number(process.env.PORT) || 4000;
@@ -20,7 +21,14 @@ app.use(cors({ origin: ORIGIN }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const httpServer = createServer(app);
+// Se permite polling + websocket (no forzar solo websocket) para máxima compatibilidad
+// con redes/proxies que bloquean el upgrade directo a WebSocket.
 const io = new Server(httpServer, { cors: { origin: ORIGIN } });
+
+const LOBBY_ROOM = '__lobby__';
+const MIN_MINUTES = 10;
+const MAX_MINUTES = 60;
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 interface LastMove {
   r: number;
@@ -29,35 +37,31 @@ interface LastMove {
   fromC: number;
 }
 
+type RoomStatus = 'waiting' | 'pending' | 'playing' | 'finished';
+
 interface Room {
   code: string;
+  hostId: string;
+  guestId: string | null;
+  pendingRequesterId: string | null;
+  status: RoomStatus;
+  timeControlMs: number;
   board: Board;
   turn: Player;
   lastMove: LastMove | null;
-  sockets: { B: string | null; N: string | null };
+  clocks: { B: number; N: number };
+  lastTickAt: number;
+  createdAt: number;
 }
 
 const rooms = new Map<string, Room>();
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin caracteres ambiguos
 
 function generateCode(): string {
   let code: string;
   do {
-    code = Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+    code = Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
   } while (rooms.has(code));
   return code;
-}
-
-function roomState(room: Room) {
-  return { board: room.board, turn: room.turn, lastMove: room.lastMove };
-}
-
-function findRoomBySocket(socketId: string): { room: Room; color: Player } | null {
-  for (const room of rooms.values()) {
-    if (room.sockets.B === socketId) return { room, color: 'B' };
-    if (room.sockets.N === socketId) return { room, color: 'N' };
-  }
-  return null;
 }
 
 function sequencesEqual(a: Sequence, b: Sequence): boolean {
@@ -66,72 +70,221 @@ function sequencesEqual(a: Sequence, b: Sequence): boolean {
   return a.steps.every((s, i) => s.toR === b.steps[i].toR && s.toC === b.steps[i].toC);
 }
 
+function publicRoomsList() {
+  return Array.from(rooms.values())
+    .filter((r) => r.status === 'waiting')
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((r) => ({
+      code: r.code,
+      timeControlMinutes: Math.round(r.timeControlMs / 60000),
+      createdAt: r.createdAt,
+    }));
+}
+
+function broadcastLobby() {
+  io.to(LOBBY_ROOM).emit('lobby-update', publicRoomsList());
+}
+
+function roomStatePayload(room: Room) {
+  return {
+    board: room.board,
+    turn: room.turn,
+    lastMove: room.lastMove,
+    clocks: { B: room.clocks.B, N: room.clocks.N },
+    timeControlMinutes: Math.round(room.timeControlMs / 60000),
+    status: room.status,
+  };
+}
+
+function colorOf(room: Room, socketId: string): Player | null {
+  if (room.hostId === socketId) return 'B';
+  if (room.guestId === socketId) return 'N';
+  return null;
+}
+
+function endRoomByTimeout(room: Room) {
+  room.status = 'finished';
+  const winner = otherPlayer(room.turn);
+  io.to(room.code).emit('state', roomStatePayload(room));
+  io.to(room.code).emit('game-over', { winner, reason: 'timeout' });
+}
+
+function cleanupRoom(code: string) {
+  rooms.delete(code);
+  broadcastLobby();
+}
+
+// Revisa cada segundo si algún jugador se quedó sin tiempo, incluso si no mueve.
+setInterval(() => {
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    if (room.status !== 'playing') continue;
+    const elapsed = now - room.lastTickAt;
+    const remaining = room.clocks[room.turn] - elapsed;
+    if (remaining <= 0) {
+      room.clocks[room.turn] = 0;
+      endRoomByTimeout(room);
+    }
+  }
+}, 1000);
+
 io.on('connection', (socket: Socket) => {
-  socket.on('create-room', () => {
+  socket.on('join-lobby', () => {
+    socket.join(LOBBY_ROOM);
+    socket.emit('lobby-update', publicRoomsList());
+  });
+
+  socket.on('leave-lobby', () => {
+    socket.leave(LOBBY_ROOM);
+  });
+
+  socket.on('create-room', ({ timeControlMinutes }: { timeControlMinutes: number }) => {
+    const minutes = Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, Math.round(timeControlMinutes) || 15));
     const code = generateCode();
+    const timeControlMs = minutes * 60000;
     const room: Room = {
       code,
+      hostId: socket.id,
+      guestId: null,
+      pendingRequesterId: null,
+      status: 'waiting',
+      timeControlMs,
       board: createInitialBoard(),
       turn: 'B',
       lastMove: null,
-      sockets: { B: socket.id, N: null },
+      clocks: { B: timeControlMs, N: timeControlMs },
+      lastTickAt: Date.now(),
+      createdAt: Date.now(),
     };
     rooms.set(code, room);
     socket.join(code);
-    socket.emit('room-created', { code, color: 'B' as Player });
+    socket.emit('room-created', { code, color: 'B' as Player, timeControlMinutes: minutes });
+    broadcastLobby();
   });
 
-  socket.on('join-room', ({ code }: { code: string }) => {
+  socket.on('request-join', ({ code }: { code: string }) => {
     const room = rooms.get(code);
-    if (!room) {
-      socket.emit('room-error', { message: 'No existe una sala con ese código.' });
+    if (!room || room.status !== 'waiting') {
+      socket.emit('room-error', { message: 'Esa sala ya no está disponible.' });
       return;
     }
-    if (room.sockets.N) {
-      socket.emit('room-error', { message: 'Esa sala ya está completa.' });
-      return;
-    }
-    room.sockets.N = socket.id;
+    room.status = 'pending';
+    room.pendingRequesterId = socket.id;
     socket.join(code);
-    socket.emit('room-joined', { code, color: 'N' as Player });
-    io.to(room.sockets.B!).emit('opponent-joined');
-    io.to(code).emit('state', roomState(room));
+    io.to(room.hostId).emit('join-request', { code });
+    socket.emit('join-request-sent', { code });
+    broadcastLobby();
+  });
+
+  socket.on('cancel-join-request', ({ code }: { code: string }) => {
+    const room = rooms.get(code);
+    if (!room || room.pendingRequesterId !== socket.id) return;
+    room.pendingRequesterId = null;
+    room.status = 'waiting';
+    socket.leave(code);
+    broadcastLobby();
+  });
+
+  socket.on('accept-join', ({ code }: { code: string }) => {
+    const room = rooms.get(code);
+    if (!room || room.hostId !== socket.id || !room.pendingRequesterId) return;
+    room.guestId = room.pendingRequesterId;
+    room.pendingRequesterId = null;
+    room.status = 'playing';
+    room.lastTickAt = Date.now();
+    const minutes = Math.round(room.timeControlMs / 60000);
+    io.to(room.guestId).emit('joined-match', { code, color: 'N' as Player, timeControlMinutes: minutes });
+    socket.emit('joined-match', { code, color: 'B' as Player, timeControlMinutes: minutes });
+    io.to(code).emit('state', roomStatePayload(room));
+  });
+
+  socket.on('reject-join', ({ code }: { code: string }) => {
+    const room = rooms.get(code);
+    if (!room || room.hostId !== socket.id) return;
+    if (room.pendingRequesterId) {
+      const rid = room.pendingRequesterId;
+      io.to(rid).emit('join-rejected', { code });
+      io.sockets.sockets.get(rid)?.leave(code);
+    }
+    room.pendingRequesterId = null;
+    room.status = 'waiting';
+    broadcastLobby();
+  });
+
+  socket.on('cancel-room', ({ code }: { code: string }) => {
+    const room = rooms.get(code);
+    if (!room || room.hostId !== socket.id || room.status === 'playing') return;
+    if (room.pendingRequesterId) {
+      io.to(room.pendingRequesterId).emit('join-rejected', { code });
+    }
+    cleanupRoom(code);
   });
 
   socket.on('move', ({ code, seq }: { code: string; seq: Sequence }) => {
     const room = rooms.get(code);
-    if (!room) return;
-    const color: Player | null = room.sockets.B === socket.id ? 'B' : room.sockets.N === socket.id ? 'N' : null;
-    if (!color || color !== room.turn) return; // no autorizado o no es su turno
+    if (!room || room.status !== 'playing') return;
+    const color = colorOf(room, socket.id);
+    if (!color || color !== room.turn) return;
+
+    const now = Date.now();
+    const elapsed = now - room.lastTickAt;
+    const remaining = room.clocks[color] - elapsed;
+    if (remaining <= 0) {
+      room.clocks[color] = 0;
+      endRoomByTimeout(room);
+      return;
+    }
 
     const legal = legalMovesForPlayer(room.board, room.turn);
     const match = legal.sequences.find((s) => sequencesEqual(s, seq));
     if (!match) {
-      // jugada invalida: reenviar el estado actual para resincronizar al cliente
-      socket.emit('state', roomState(room));
+      socket.emit('state', roomStatePayload(room));
       return;
     }
 
+    room.clocks[color] = remaining;
     const lastStep = match.steps[match.steps.length - 1];
     room.board = applySequence(room.board, match);
     room.lastMove = { r: lastStep.toR, c: lastStep.toC, fromR: match.startR, fromC: match.startC };
-    room.turn = room.turn === 'B' ? 'N' : 'B';
+    room.turn = otherPlayer(room.turn);
+    room.lastTickAt = now;
 
-    io.to(code).emit('state', roomState(room));
+    io.to(code).emit('state', roomStatePayload(room));
 
     const status = checkGameStatus(room.board, room.turn);
     if (status.over) {
+      room.status = 'finished';
       io.to(code).emit('game-over', { winner: status.winner, reason: status.reason });
     }
   });
 
+  socket.on('leave-match', ({ code }: { code: string }) => {
+    const room = rooms.get(code);
+    if (!room) return;
+    if (room.hostId === socket.id || room.guestId === socket.id) {
+      room.status = 'finished';
+      io.to(code).emit('opponent-left');
+    }
+  });
+
   socket.on('disconnect', () => {
-    const found = findRoomBySocket(socket.id);
-    if (!found) return;
-    const { room, color } = found;
-    io.to(room.code).emit('opponent-left');
-    room.sockets[color] = null;
-    if (!room.sockets.B && !room.sockets.N) rooms.delete(room.code);
+    for (const room of rooms.values()) {
+      if (room.hostId === socket.id) {
+        if (room.status === 'playing') {
+          io.to(room.code).emit('opponent-left');
+        }
+        cleanupRoom(room.code);
+      } else if (room.pendingRequesterId === socket.id) {
+        room.pendingRequesterId = null;
+        room.status = 'waiting';
+        broadcastLobby();
+      } else if (room.guestId === socket.id) {
+        if (room.status === 'playing') {
+          io.to(room.code).emit('opponent-left');
+        }
+        cleanupRoom(room.code);
+      }
+    }
   });
 });
 

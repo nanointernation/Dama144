@@ -10,8 +10,10 @@ import {
   isDark,
   checkGameStatus,
 } from '@dama144/engine';
+import { ChessClock } from './clock';
 
 export type Mode = 'local' | 'ai' | 'online';
+export type RoomStatus = 'waiting' | 'pending' | 'playing' | 'finished';
 
 interface Selected {
   startR: number;
@@ -30,6 +32,8 @@ export interface GameCallbacks {
   onRequestAiMove?: (board: Board, player: Player) => void;
 }
 
+const DEFAULT_TIME_CONTROL_MINUTES = 15;
+
 export class GameController {
   board: Board = createInitialBoard();
   turn: Player = 'B';
@@ -45,31 +49,69 @@ export class GameController {
   /** En modo ai: el color que juega la maquina. */
   aiColor: Player | null = null;
 
+  clock: ChessClock = new ChessClock(DEFAULT_TIME_CONTROL_MINUTES * 60000);
+  timeControlMinutes: number = DEFAULT_TIME_CONTROL_MINUTES;
+
   constructor(private cb: GameCallbacks) {}
 
-  reset(mode: Mode, opts: { myColor?: Player; aiColor?: Player } = {}) {
+  reset(mode: Mode, opts: { myColor?: Player; aiColor?: Player; timeControlMinutes?: number } = {}) {
     this.mode = mode;
     this.myColor = opts.myColor ?? null;
     this.aiColor = opts.aiColor ?? null;
+    this.timeControlMinutes = opts.timeControlMinutes ?? DEFAULT_TIME_CONTROL_MINUTES;
     this.board = createInitialBoard();
     this.turn = 'B';
     this.selected = null;
     this.gameOver = false;
     this.lastMove = null;
+    this.clock = new ChessClock(this.timeControlMinutes * 60000);
     this.refreshLegal();
+    if (mode !== 'online') this.clock.start(this.turn);
     this.render();
     this.maybeTriggerAi();
   }
 
   /** Reemplaza el estado completo (usado en modo online al recibir la version autoritativa del servidor). */
-  applyRemoteState(board: Board, turn: Player, lastMove: GameController['lastMove']) {
+  applyRemoteState(
+    board: Board,
+    turn: Player,
+    lastMove: GameController['lastMove'],
+    clocks: { B: number; N: number },
+    status: RoomStatus
+  ) {
     this.board = board;
     this.turn = turn;
     this.selected = null;
     this.lastMove = lastMove;
+    this.clock.setRemaining(clocks);
+    if (status === 'playing' && !this.gameOver) {
+      this.clock.start(turn);
+    } else {
+      this.clock.stop();
+    }
     this.refreshLegal();
     this.checkGameOver();
     this.render();
+  }
+
+  /** Se llama periódicamente desde main.ts para refrescar el reloj y detectar timeout (local/ai). */
+  pollClock() {
+    if (this.gameOver) return;
+    if (this.mode === 'online') {
+      this.clock.sync(); // solo refresca el valor mostrado; el servidor decide el timeout
+      return;
+    }
+    const expired = this.clock.checkExpired();
+    if (expired) {
+      this.gameOver = true;
+      this.clock.stop();
+      const winner: Player = expired === 'B' ? 'N' : 'B';
+      this.cb.onGameOver(winner, 'timeout');
+    }
+  }
+
+  getClockValues(): { B: number; N: number } {
+    return this.clock.sync();
   }
 
   private refreshLegal() {
@@ -86,6 +128,7 @@ export class GameController {
     const status = checkGameStatus(this.board, this.turn);
     if (status.over) {
       this.gameOver = true;
+      this.clock.stop();
       this.cb.onGameOver(status.winner, status.reason);
       return true;
     }
@@ -205,6 +248,7 @@ export class GameController {
     this.turn = this.turn === 'B' ? 'N' : 'B';
     this.refreshLegal();
     if (!this.checkGameOver()) {
+      this.clock.start(this.turn);
       this.render();
       this.updateStatus();
       this.maybeTriggerAi();
