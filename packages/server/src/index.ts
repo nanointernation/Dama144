@@ -12,7 +12,7 @@ import {
   checkGameStatus,
   otherPlayer,
 } from '@dama144/engine';
-import { verifyToken, recordMatchResult, type AuthUser } from './supabase';
+import { verifyToken, recordMatchResult, type AuthUser } from './supabase.js';
 
 const PORT = Number(process.env.PORT) || 4000;
 const ORIGIN = process.env.CLIENT_ORIGIN || '*';
