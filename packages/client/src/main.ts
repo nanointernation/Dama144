@@ -4,7 +4,19 @@ import { renderBoard } from './render';
 import { NetworkClient, type RoomStateMsg, type LobbyRoom } from './network';
 import { formatClock } from './clock';
 import { initTheme, updateTheme, resetTheme, type ThemeColors } from './theme';
-import { signUp, signIn, signOut, getSession, onAuthStateChange, getMyProfile, getLeaderboard, type Profile } from './auth';
+import {
+  signUp,
+  signIn,
+  signOut,
+  getSession,
+  onAuthStateChange,
+  getMyProfile,
+  getLeaderboard,
+  getMyMatchHistory,
+  updateUsername,
+  uploadAvatar,
+  type Profile,
+} from './auth';
 
 const menuScreen = document.getElementById('menuScreen')!;
 const gameScreen = document.getElementById('gameScreen')!;
@@ -33,11 +45,41 @@ const authSubmitBtn = document.getElementById('authSubmitBtn') as HTMLButtonElem
 const authToggleModeBtn = document.getElementById('authToggleModeBtn')!;
 const authStatus = document.getElementById('authStatus')!;
 const profileLine = document.getElementById('profileLine')!;
+const profileAvatar = document.getElementById('profileAvatar') as HTMLImageElement;
+const profileAvatarPlaceholder = document.getElementById('profileAvatarPlaceholder')!;
 const signOutBtn = document.getElementById('signOutBtn')!;
 const leaderboardBtn = document.getElementById('leaderboardBtn')!;
 const leaderboardOverlay = document.getElementById('leaderboardOverlay')!;
 const leaderboardList = document.getElementById('leaderboardList')!;
 const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn')!;
+const historyBtn = document.getElementById('historyBtn')!;
+const historyOverlay = document.getElementById('historyOverlay')!;
+const historyList = document.getElementById('historyList')!;
+const closeHistoryBtn = document.getElementById('closeHistoryBtn')!;
+const editProfileBtn = document.getElementById('editProfileBtn')!;
+const editProfileOverlay = document.getElementById('editProfileOverlay')!;
+const editAvatarPreview = document.getElementById('editAvatarPreview') as HTMLImageElement;
+const editAvatarPlaceholder = document.getElementById('editAvatarPlaceholder')!;
+const avatarFileInput = document.getElementById('avatarFileInput') as HTMLInputElement;
+const chooseAvatarBtn = document.getElementById('chooseAvatarBtn')!;
+const editUsernameInput = document.getElementById('editUsernameInput') as HTMLInputElement;
+const editProfileStatus = document.getElementById('editProfileStatus')!;
+const cancelEditProfileBtn = document.getElementById('cancelEditProfileBtn')!;
+const saveProfileBtn = document.getElementById('saveProfileBtn') as HTMLButtonElement;
+
+/** Actualiza una pareja img/placeholder para mostrar la foto de perfil o un circulo vacio si no hay. */
+function applyAvatar(img: HTMLImageElement, placeholder: HTMLElement, url: string | null | undefined) {
+  if (url) {
+    img.src = url;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    placeholder.style.display = 'block';
+  }
+}
+
+let pendingAvatarFile: File | null = null;
 
 let isRegisterMode = false;
 let myProfile: Profile | null = null;
@@ -104,6 +146,7 @@ async function refreshAuthUI() {
     authLoggedIn.style.display = 'block';
     if (myProfile) {
       profileLine.textContent = `${myProfile.username} · Elo ${myProfile.elo} · ${myProfile.wins}V-${myProfile.losses}D`;
+      applyAvatar(profileAvatar, profileAvatarPlaceholder, myProfile.avatar_url);
     }
   } else {
     myAccessToken = null;
@@ -126,8 +169,11 @@ leaderboardBtn.addEventListener('click', async () => {
   }
   top.forEach((p, i) => {
     const row = document.createElement('div');
-    row.className = 'room-row';
-    row.innerHTML = `<span>#${i + 1} ${p.username}</span><span>Elo ${p.elo} · ${p.wins}V-${p.losses}D</span>`;
+    row.className = 'leaderboard-row';
+    const avatarHtml = p.avatar_url
+      ? `<img class="avatar avatar-sm" src="${p.avatar_url}" alt="" />`
+      : `<div class="avatar avatar-sm avatar-placeholder"></div>`;
+    row.innerHTML = `${avatarHtml}<div class="info"><span>#${i + 1} ${p.username}</span><span>Elo ${p.elo} · ${p.wins}V-${p.losses}D</span></div>`;
     leaderboardList.appendChild(row);
   });
   leaderboardOverlay.classList.add('show');
@@ -135,6 +181,102 @@ leaderboardBtn.addEventListener('click', async () => {
 
 closeLeaderboardBtn.addEventListener('click', () => {
   leaderboardOverlay.classList.remove('show');
+});
+
+function formatMatchDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function reasonLabel(reason: string): string {
+  if (reason === 'timeout') return 'por tiempo';
+  if (reason === 'forfeit') return 'por abandono';
+  return '';
+}
+
+historyBtn.addEventListener('click', async () => {
+  if (!myAccessToken) return;
+  const session = await getSession();
+  if (!session) return;
+  const matches = await getMyMatchHistory(session.user.id, 30);
+  historyList.innerHTML = '';
+  if (matches.length === 0) {
+    historyList.innerHTML = '<div class="status-line">Aún no has jugado ninguna partida en línea.</div>';
+  }
+  matches.forEach((m) => {
+    const row = document.createElement('div');
+    row.className = 'history-row ' + (m.won ? 'win' : 'loss');
+    const sign = m.myEloChange >= 0 ? '+' : '';
+    row.innerHTML = `<div class="info">
+      <span>${m.won ? '✅ Ganaste' : '❌ Perdiste'} vs ${m.opponentUsername} ${reasonLabel(m.reason)}</span>
+      <span style="color:var(--ink-dim); font-size:12px;">${formatMatchDate(m.played_at)} · ${m.time_control_minutes} min</span>
+    </div><span style="color:${m.myEloChange >= 0 ? 'var(--ok, #6c8a52)' : 'var(--danger)'};">${sign}${m.myEloChange}</span>`;
+    historyList.appendChild(row);
+  });
+  historyOverlay.classList.add('show');
+});
+
+closeHistoryBtn.addEventListener('click', () => {
+  historyOverlay.classList.remove('show');
+});
+
+// ===== Editar perfil =====
+editProfileBtn.addEventListener('click', () => {
+  if (!myProfile) return;
+  editUsernameInput.value = myProfile.username;
+  applyAvatar(editAvatarPreview, editAvatarPlaceholder, myProfile.avatar_url);
+  pendingAvatarFile = null;
+  editProfileStatus.textContent = '';
+  editProfileOverlay.classList.add('show');
+});
+
+cancelEditProfileBtn.addEventListener('click', () => {
+  editProfileOverlay.classList.remove('show');
+});
+
+chooseAvatarBtn.addEventListener('click', () => {
+  avatarFileInput.click();
+});
+
+avatarFileInput.addEventListener('change', () => {
+  const file = avatarFileInput.files?.[0];
+  if (!file) return;
+  pendingAvatarFile = file;
+  const previewUrl = URL.createObjectURL(file);
+  applyAvatar(editAvatarPreview, editAvatarPlaceholder, previewUrl);
+});
+
+saveProfileBtn.addEventListener('click', async () => {
+  const session = await getSession();
+  if (!session || !myProfile) return;
+  saveProfileBtn.disabled = true;
+  editProfileStatus.textContent = 'Guardando…';
+  editProfileStatus.className = 'status-line';
+
+  const newUsername = editUsernameInput.value.trim();
+  if (newUsername && newUsername !== myProfile.username) {
+    const err = await updateUsername(session.user.id, newUsername);
+    if (err) {
+      editProfileStatus.textContent = err.includes('duplicate') ? 'Ese nombre de usuario ya está en uso.' : err;
+      editProfileStatus.className = 'status-line warn';
+      saveProfileBtn.disabled = false;
+      return;
+    }
+  }
+
+  if (pendingAvatarFile) {
+    const { error } = await uploadAvatar(session.user.id, pendingAvatarFile);
+    if (error) {
+      editProfileStatus.textContent = 'No se pudo subir la foto: ' + error;
+      editProfileStatus.className = 'status-line warn';
+      saveProfileBtn.disabled = false;
+      return;
+    }
+  }
+
+  await refreshAuthUI();
+  saveProfileBtn.disabled = false;
+  editProfileOverlay.classList.remove('show');
 });
 
 const timeControlSlider = document.getElementById('timeControlSlider') as HTMLInputElement;
@@ -152,6 +294,8 @@ const roomsEmptyMsg = document.getElementById('roomsEmptyMsg')!;
 
 const clockRowB = document.getElementById('clockRowB')!;
 const clockRowN = document.getElementById('clockRowN')!;
+const clockLabelB = document.getElementById('clockLabelB')!;
+const clockLabelN = document.getElementById('clockLabelN')!;
 const clockBEl = document.getElementById('clockB')!;
 const clockNEl = document.getElementById('clockN')!;
 
@@ -172,11 +316,22 @@ function logMsg(msg: string) {
 }
 
 // ===== Reloj =====
+function clockLabelFor(color: Player): string {
+  if (game.mode === 'online' && myProfile) {
+    if (color === game.myColor) return `⏱ Tú (${myProfile.username})`;
+    return `⏱ ${game.opponentName ?? 'Rival'}`;
+  }
+  if (game.mode === 'ai') return color === game.aiColor ? '⏱ IA' : '⏱ Tú';
+  return color === 'B' ? '⏱ Blancas' : '⏱ Negras';
+}
+
 function renderClockDisplay() {
   game.pollClock();
   const clocks = game.getClockValues();
   clockBEl.textContent = formatClock(clocks.B);
   clockNEl.textContent = formatClock(clocks.N);
+  clockLabelB.textContent = clockLabelFor('B');
+  clockLabelN.textContent = clockLabelFor('N');
 
   clockRowB.classList.toggle('active', game.turn === 'B' && !game.gameOver);
   clockRowN.classList.toggle('active', game.turn === 'N' && !game.gameOver);
@@ -213,7 +368,12 @@ const game = new GameController({
       }
     countB.textContent = String(cB);
     countN.textContent = String(cN);
-    turnLabel.textContent = 'Turno: ' + playerName(game.turn);
+    if (game.mode === 'online' && myProfile) {
+      const isMyTurn = game.turn === game.myColor;
+      turnLabel.textContent = isMyTurn ? 'Tu turno' : `Turno de ${game.opponentName ?? 'tu rival'}`;
+    } else {
+      turnLabel.textContent = 'Turno: ' + playerName(game.turn);
+    }
     turnDot.className = 'turn-dot ' + game.turn;
     if (game.mode === 'online' && game.opponentName && myProfile) {
       const meLabel = playerName(game.myColor!) + ' (' + myProfile.username + ')';

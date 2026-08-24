@@ -33,9 +33,17 @@
 
     <div class="menu-group" id="authLoggedIn" style="display:none;">
       <div class="menu-group-label">Tu cuenta</div>
-      <div class="status-line" id="profileLine"></div>
+      <div class="profile-row" id="profileRow">
+        <img id="profileAvatar" class="avatar avatar-md" src="" alt="" style="display:none;" />
+        <div id="profileAvatarPlaceholder" class="avatar avatar-md avatar-placeholder"></div>
+        <div class="status-line" id="profileLine" style="margin:0;"></div>
+      </div>
       <div class="menu-row">
         <button class="btn" id="leaderboardBtn">Top de jugadores</button>
+        <button class="btn" id="historyBtn">Mis partidas</button>
+      </div>
+      <div class="menu-row" style="margin-top:8px;">
+        <button class="btn" id="editProfileBtn">Editar perfil</button>
         <button class="btn" id="signOutBtn">Cerrar sesión</button>
       </div>
     </div>
@@ -111,11 +119,11 @@
 
       <div class="panel-card">
         <div class="clock-row" id="clockRowB">
-          <span class="clock-label">⏱ Blancas</span>
+          <span class="clock-label" id="clockLabelB">⏱ Blancas</span>
           <span class="clock-value" id="clockB">15:00</span>
         </div>
         <div class="clock-row" id="clockRowN">
-          <span class="clock-label">⏱ Negras</span>
+          <span class="clock-label" id="clockLabelN">⏱ Negras</span>
           <span class="clock-value" id="clockN">15:00</span>
         </div>
       </div>
@@ -191,6 +199,39 @@
       <div id="leaderboardList" class="rooms-list" style="max-height:320px;"></div>
       <div class="settings-actions">
         <button class="btn btn-primary" id="closeLeaderboardBtn">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: HISTORIAL DE PARTIDAS -->
+  <div class="overlay" id="historyOverlay">
+    <div class="overlay-card settings-card">
+      <h2 class="settings-title">Mis partidas</h2>
+      <div id="historyList" class="rooms-list" style="max-height:320px;"></div>
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="closeHistoryBtn">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR PERFIL -->
+  <div class="overlay" id="editProfileOverlay">
+    <div class="overlay-card settings-card">
+      <h2 class="settings-title">Editar perfil</h2>
+      <div class="profile-edit-row">
+        <img id="editAvatarPreview" class="avatar avatar-lg" src="" alt="" style="display:none;" />
+        <div id="editAvatarPlaceholder" class="avatar avatar-lg avatar-placeholder"></div>
+        <div>
+          <input type="file" id="avatarFileInput" accept="image/*" style="display:none;" />
+          <button class="btn" id="chooseAvatarBtn">Elegir foto</button>
+        </div>
+      </div>
+      <div class="menu-group-label" style="margin-top:16px;">Nombre de usuario</div>
+      <input class="input-code" id="editUsernameInput" style="width:100%;" maxlength="20" />
+      <div class="status-line" id="editProfileStatus"></div>
+      <div class="settings-actions">
+        <button class="btn" id="cancelEditProfileBtn">Cancelar</button>
+        <button class="btn btn-primary" id="saveProfileBtn">Guardar</button>
       </div>
     </div>
   </div>

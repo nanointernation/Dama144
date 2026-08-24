@@ -139,6 +139,25 @@ h1.title{
 }
 .overlay-card h2{ font-family:'Cormorant Garamond', serif; color:var(--brass-hi); font-size:36px; margin:0 0 10px; }
 .overlay-text{ margin-bottom:18px; color:var(--ink-dim); }
+.avatar{ border-radius:50%; object-fit:cover; flex-shrink:0; }
+.avatar-md{ width:36px; height:36px; }
+.avatar-lg{ width:64px; height:64px; }
+.avatar-sm{ width:22px; height:22px; }
+.avatar-placeholder{
+  background: linear-gradient(160deg, #4a3a24, #2c2013);
+  border:1px solid var(--brass);
+}
+.profile-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.profile-edit-row{ display:flex; align-items:center; gap:16px; margin-bottom:6px; }
+.leaderboard-row, .history-row{
+  display:flex; align-items:center; gap:10px;
+  border:1px solid rgba(201,154,83,0.25); border-radius:8px; padding:8px 10px;
+  font-size:13.5px;
+}
+.leaderboard-row .info, .history-row .info{ flex:1; display:flex; flex-direction:column; gap:2px; }
+.history-row.win{ box-shadow: inset 0 0 0 1px rgba(108,138,82,0.5); }
+.history-row.loss{ box-shadow: inset 0 0 0 1px rgba(181,72,42,0.4); }
+
 .time-slider{ width:100%; accent-color: var(--brass); }
 .online-subcard{
   border:1px solid rgba(201,154,83,0.3); border-radius:8px; padding:12px;
