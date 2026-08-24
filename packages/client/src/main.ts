@@ -325,18 +325,35 @@ function clockLabelFor(color: Player): string {
   return color === 'B' ? '⏱ Blancas' : '⏱ Negras';
 }
 
+/**
+ * Determina que color va arriba en el panel, para que coincida siempre con la
+ * posicion real de las fichas en el tablero: Negras siempre ocupan las filas
+ * de arriba salvo en modo online cuando yo juego con Negras (ahi el tablero
+ * se voltea para que mis fichas queden abajo, y el reloj debe seguir esa
+ * misma logica).
+ */
+function topColor(): Player {
+  if (game.mode === 'online' && game.myColor) {
+    return game.myColor === 'B' ? 'N' : 'B';
+  }
+  return 'N';
+}
+
 function renderClockDisplay() {
   game.pollClock();
   const clocks = game.getClockValues();
-  clockBEl.textContent = formatClock(clocks.B);
-  clockNEl.textContent = formatClock(clocks.N);
-  clockLabelB.textContent = clockLabelFor('B');
-  clockLabelN.textContent = clockLabelFor('N');
+  const top = topColor();
+  const bottom: Player = top === 'B' ? 'N' : 'B';
 
-  clockRowB.classList.toggle('active', game.turn === 'B' && !game.gameOver);
-  clockRowN.classList.toggle('active', game.turn === 'N' && !game.gameOver);
-  clockRowB.classList.toggle('low-time', clocks.B <= 60000);
-  clockRowN.classList.toggle('low-time', clocks.N <= 60000);
+  clockLabelB.textContent = clockLabelFor(top);
+  clockLabelN.textContent = clockLabelFor(bottom);
+  clockBEl.textContent = formatClock(clocks[top]);
+  clockNEl.textContent = formatClock(clocks[bottom]);
+
+  clockRowB.classList.toggle('active', game.turn === top && !game.gameOver);
+  clockRowN.classList.toggle('active', game.turn === bottom && !game.gameOver);
+  clockRowB.classList.toggle('low-time', clocks[top] <= 60000);
+  clockRowN.classList.toggle('low-time', clocks[bottom] <= 60000);
 }
 
 function startClockInterval() {
