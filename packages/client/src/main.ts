@@ -697,6 +697,21 @@ document.getElementById('closeSettingsBtn')!.addEventListener('click', () => {
   settingsOverlay.classList.remove('show');
 });
 
+document.getElementById('flipBoardBtn')!.addEventListener('click', () => {
+  // Voltear el patron del tablero equivale matematicamente a intercambiar
+  // los dos colores de las casillas (en un tablero de tamano par como 12x12,
+  // reflejar el tablero produce el mismo resultado visual que solo cambiar
+  // que color usa cada diagonal). No hace falta tocar ninguna ficha ni
+  // logica del juego.
+  const swapped: ThemeColors = {
+    ...currentColorsFromInputs(),
+    lightSquare: colorDarkSquare.value,
+    darkSquare: colorLightSquare.value,
+  };
+  updateTheme(swapped);
+  syncColorInputs(swapped);
+});
+
 document.getElementById('resetColorsBtn')!.addEventListener('click', () => {
   syncColorInputs(resetTheme());
 });
