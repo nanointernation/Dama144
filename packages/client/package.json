@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@dama144/engine": "*",
+    "@dama144/neural-ai": "^0.1.0",
     "@supabase/supabase-js": "^2.112.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {

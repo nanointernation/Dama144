@@ -5,12 +5,17 @@
   "workspaces": [
     "packages/engine",
     "packages/client",
-    "packages/server"
+    "packages/server",
+    "packages/neural-ai",
+    "packages/ai-training"
   ],
   "scripts": {
     "build:engine": "npm run build -w packages/engine",
     "dev:client": "npm run dev -w packages/client",
     "build:client": "npm run build -w packages/client",
-    "dev:server": "npm run dev -w packages/server"
+    "dev:server": "npm run dev -w packages/server",
+    "build:neural-ai": "npm run build -w packages/neural-ai",
+    "build:ai-training": "npm run build -w packages/ai-training",
+    "train:ai": "npm run train -w packages/ai-training"
   }
 }

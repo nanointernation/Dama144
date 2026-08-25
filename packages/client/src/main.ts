@@ -1,4 +1,8 @@
-import type { Difficulty, Player, Sequence, Board } from '@dama144/engine';
+import type { Player, Sequence, Board } from '@dama144/engine';
+import type { Difficulty as ClassicDifficulty } from '@dama144/engine';
+
+/** Las 3 dificultades clasicas (minimax) mas el nuevo modo neuronal (estilo AlphaZero). */
+type AnyDifficulty = ClassicDifficulty | 'neuronal';
 import { GameController, type Mode } from './game';
 import { renderBoard } from './render';
 import { NetworkClient, type RoomStateMsg, type LobbyRoom } from './network';
@@ -300,7 +304,8 @@ const clockBEl = document.getElementById('clockB')!;
 const clockNEl = document.getElementById('clockN')!;
 
 let aiWorker: Worker | null = null;
-let pendingDifficulty: Difficulty = 'media';
+let neuralAiWorker: Worker | null = null;
+let pendingDifficulty: AnyDifficulty = 'media';
 let pendingTimeControlMinutes = 15;
 let currentRoomCode: string | null = null;
 let clockIntervalId: number | null = null;
@@ -425,6 +430,20 @@ const game = new GameController({
     if (currentRoomCode) network.sendMove(currentRoomCode, seq);
   },
   onRequestAiMove: (board: Board, player: Player) => {
+    if (pendingDifficulty === 'neuronal') {
+      if (!neuralAiWorker) neuralAiWorker = new Worker(new URL('./neural-ai-worker.ts', import.meta.url), { type: 'module' });
+      const handler = (ev: MessageEvent<{ move: Sequence | null; error?: string }>) => {
+        neuralAiWorker?.removeEventListener('message', handler);
+        if (ev.data.error) {
+          onlineStatus.textContent = ev.data.error;
+          onlineStatus.className = 'status-line warn';
+        }
+        if (ev.data.move) game.applyLocally(ev.data.move);
+      };
+      neuralAiWorker.addEventListener('message', handler);
+      neuralAiWorker.postMessage({ board, player });
+      return;
+    }
     if (!aiWorker) aiWorker = new Worker(new URL('./ai-worker.ts', import.meta.url), { type: 'module' });
     const handler = (ev: MessageEvent<{ move: Sequence | null }>) => {
       aiWorker?.removeEventListener('message', handler);
@@ -457,7 +476,7 @@ function startLocal() {
   startClockInterval();
 }
 
-function startAi(difficulty: Difficulty) {
+function startAi(difficulty: AnyDifficulty) {
   currentRoomCode = null;
   pendingDifficulty = difficulty;
   showScreen('game');
@@ -475,7 +494,7 @@ timeControlSlider.addEventListener('input', () => {
 
 document.getElementById('modeLocalBtn')!.addEventListener('click', startLocal);
 document.querySelectorAll<HTMLButtonElement>('[data-diff]').forEach((btn) => {
-  btn.addEventListener('click', () => startAi(btn.dataset.diff as Difficulty));
+  btn.addEventListener('click', () => startAi(btn.dataset.diff as AnyDifficulty));
 });
 
 // ===== Red / lobby en línea =====

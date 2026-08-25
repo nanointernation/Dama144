@@ -1,0 +1,21 @@
+{
+  "name": "@dama144/ai-training",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "train": "node dist/train.js",
+    "smoke-test": "node dist/smoke_test.js",
+    "export-model": "node dist/export_for_browser.js"
+  },
+  "dependencies": {
+    "@dama144/engine": "*",
+    "@dama144/neural-ai": "*",
+    "@tensorflow/tfjs": "^4.20.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "@types/node": "^20.14.9"
+  }
+}
