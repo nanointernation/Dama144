@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import type { Board, Player, Sequence } from '@dama144/engine';
+import type { Board, Player, Sequence, BoardVariant } from '@dama144/engine';
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:4000';
 
@@ -7,6 +7,7 @@ export interface LobbyRoom {
   code: string;
   hostName: string;
   timeControlMinutes: number;
+  boardVariant: BoardVariant;
   createdAt: number;
 }
 
@@ -22,11 +23,17 @@ export interface RoomStateMsg {
 
 export interface NetworkCallbacks {
   onLobbyUpdate: (rooms: LobbyRoom[]) => void;
-  onRoomCreated: (code: string, myColor: Player, timeControlMinutes: number) => void;
+  onRoomCreated: (code: string, myColor: Player, timeControlMinutes: number, boardVariant: BoardVariant) => void;
   onJoinRequestSent: (code: string) => void;
   onJoinRequestReceived: (code: string, requesterName: string) => void;
   onJoinRejected: () => void;
-  onMatchStarted: (code: string, myColor: Player, timeControlMinutes: number, opponentName: string) => void;
+  onMatchStarted: (
+    code: string,
+    myColor: Player,
+    timeControlMinutes: number,
+    opponentName: string,
+    boardVariant: BoardVariant
+  ) => void;
   onState: (state: RoomStateMsg) => void;
   onGameOver: (winner: Player, reason: string) => void;
   onOpponentLeft: () => void;
@@ -62,16 +69,25 @@ export class NetworkClient {
     });
 
     this.socket.on('lobby-update', (rooms: LobbyRoom[]) => cb.onLobbyUpdate(rooms));
-    this.socket.on('room-created', (data: { code: string; color: Player; timeControlMinutes: number }) => {
-      cb.onRoomCreated(data.code, data.color, data.timeControlMinutes);
-    });
+    this.socket.on(
+      'room-created',
+      (data: { code: string; color: Player; timeControlMinutes: number; boardVariant: BoardVariant }) => {
+        cb.onRoomCreated(data.code, data.color, data.timeControlMinutes, data.boardVariant);
+      }
+    );
     this.socket.on('join-request-sent', (data: { code: string }) => cb.onJoinRequestSent(data.code));
     this.socket.on('join-request', (data: { code: string; name: string }) => cb.onJoinRequestReceived(data.code, data.name));
     this.socket.on('join-rejected', () => cb.onJoinRejected());
     this.socket.on(
       'joined-match',
-      (data: { code: string; color: Player; timeControlMinutes: number; opponentName: string }) => {
-        cb.onMatchStarted(data.code, data.color, data.timeControlMinutes, data.opponentName);
+      (data: {
+        code: string;
+        color: Player;
+        timeControlMinutes: number;
+        opponentName: string;
+        boardVariant: BoardVariant;
+      }) => {
+        cb.onMatchStarted(data.code, data.color, data.timeControlMinutes, data.opponentName, data.boardVariant);
       }
     );
     this.socket.on('state', (data: RoomStateMsg) => cb.onState(data));
@@ -96,8 +112,8 @@ export class NetworkClient {
     this.socket.emit('leave-lobby');
   }
 
-  createRoom(timeControlMinutes: number) {
-    this.socket.emit('create-room', { timeControlMinutes });
+  createRoom(timeControlMinutes: number, boardVariant: BoardVariant) {
+    this.socket.emit('create-room', { timeControlMinutes, boardVariant });
   }
 
   cancelRoom(code: string) {

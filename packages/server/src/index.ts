@@ -6,6 +6,7 @@ import {
   Board,
   Player,
   Sequence,
+  BoardVariant,
   createInitialBoard,
   legalMovesForPlayer,
   applySequence,
@@ -51,6 +52,7 @@ interface Room {
   pendingRequesterUser: AuthUser | null;
   status: RoomStatus;
   timeControlMs: number;
+  boardVariant: BoardVariant;
   board: Board;
   turn: Player;
   lastMove: LastMove | null;
@@ -89,6 +91,7 @@ function publicRoomsList() {
       code: r.code,
       hostName: r.hostUser.username,
       timeControlMinutes: Math.round(r.timeControlMs / 60000),
+      boardVariant: r.boardVariant,
       createdAt: r.createdAt,
     }));
 }
@@ -169,39 +172,44 @@ io.on('connection', (socket: Socket) => {
     socket.leave(LOBBY_ROOM);
   });
 
-  socket.on('create-room', async ({ timeControlMinutes }: { timeControlMinutes: number }) => {
-    const user = await getUserPromise(socket);
-    if (!user) {
-      socket.emit('auth-error', { message: 'Debes iniciar sesión para crear una sala en línea.' });
-      return;
+  socket.on(
+    'create-room',
+    async ({ timeControlMinutes, boardVariant }: { timeControlMinutes: number; boardVariant?: BoardVariant }) => {
+      const user = await getUserPromise(socket);
+      if (!user) {
+        socket.emit('auth-error', { message: 'Debes iniciar sesión para crear una sala en línea.' });
+        return;
+      }
+      const minutes = Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, Math.round(timeControlMinutes) || 15));
+      const variant: BoardVariant = boardVariant === 'dominicana' ? 'dominicana' : 'estandar';
+      const code = generateCode();
+      const timeControlMs = minutes * 60000;
+      const room: Room = {
+        code,
+        hostId: socket.id,
+        hostUser: user,
+        guestId: null,
+        guestUser: null,
+        pendingRequesterId: null,
+        pendingRequesterUser: null,
+        status: 'waiting',
+        timeControlMs,
+        boardVariant: variant,
+        board: createInitialBoard(variant),
+        turn: 'B',
+        lastMove: null,
+        clocks: { B: timeControlMs, N: timeControlMs },
+        lastTickAt: Date.now(),
+        hasMoved: false,
+        createdAt: Date.now(),
+        resultRecorded: false,
+      };
+      rooms.set(code, room);
+      socket.join(code);
+      socket.emit('room-created', { code, color: 'B' as Player, timeControlMinutes: minutes, boardVariant: variant });
+      broadcastLobby();
     }
-    const minutes = Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, Math.round(timeControlMinutes) || 15));
-    const code = generateCode();
-    const timeControlMs = minutes * 60000;
-    const room: Room = {
-      code,
-      hostId: socket.id,
-      hostUser: user,
-      guestId: null,
-      guestUser: null,
-      pendingRequesterId: null,
-      pendingRequesterUser: null,
-      status: 'waiting',
-      timeControlMs,
-      board: createInitialBoard(),
-      turn: 'B',
-      lastMove: null,
-      clocks: { B: timeControlMs, N: timeControlMs },
-      lastTickAt: Date.now(),
-      hasMoved: false,
-      createdAt: Date.now(),
-      resultRecorded: false,
-    };
-    rooms.set(code, room);
-    socket.join(code);
-    socket.emit('room-created', { code, color: 'B' as Player, timeControlMinutes: minutes });
-    broadcastLobby();
-  });
+  );
 
   socket.on('request-join', async ({ code }: { code: string }) => {
     const user = await getUserPromise(socket);
@@ -248,12 +256,14 @@ io.on('connection', (socket: Socket) => {
       color: 'N' as Player,
       timeControlMinutes: minutes,
       opponentName: room.hostUser.username,
+      boardVariant: room.boardVariant,
     });
     socket.emit('joined-match', {
       code,
       color: 'B' as Player,
       timeControlMinutes: minutes,
       opponentName: room.guestUser.username,
+      boardVariant: room.boardVariant,
     });
     io.to(code).emit('state', roomStatePayload(room));
   });

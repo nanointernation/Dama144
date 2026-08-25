@@ -1,4 +1,4 @@
-import type { Player, Sequence, Board } from '@dama144/engine';
+import type { Player, Sequence, Board, BoardVariant } from '@dama144/engine';
 import type { Difficulty as ClassicDifficulty } from '@dama144/engine';
 
 /** Las 3 dificultades clasicas (minimax) mas el nuevo modo neuronal (estilo AlphaZero). */
@@ -307,6 +307,7 @@ let aiWorker: Worker | null = null;
 let neuralAiWorker: Worker | null = null;
 let pendingDifficulty: AnyDifficulty = 'media';
 let pendingTimeControlMinutes = 15;
+let pendingBoardVariant: BoardVariant = 'estandar';
 let currentRoomCode: string | null = null;
 let clockIntervalId: number | null = null;
 
@@ -472,7 +473,7 @@ function startLocal() {
   showScreen('game');
   overlay.classList.remove('show');
   logEl.innerHTML = '';
-  game.reset('local', { timeControlMinutes: pendingTimeControlMinutes });
+  game.reset('local', { timeControlMinutes: pendingTimeControlMinutes, boardVariant: pendingBoardVariant });
   startClockInterval();
 }
 
@@ -482,7 +483,11 @@ function startAi(difficulty: AnyDifficulty) {
   showScreen('game');
   overlay.classList.remove('show');
   logEl.innerHTML = '';
-  game.reset('ai', { aiColor: 'N', timeControlMinutes: pendingTimeControlMinutes });
+  game.reset('ai', {
+    aiColor: 'N',
+    timeControlMinutes: pendingTimeControlMinutes,
+    boardVariant: pendingBoardVariant,
+  });
   startClockInterval();
 }
 
@@ -490,6 +495,15 @@ function startAi(difficulty: AnyDifficulty) {
 timeControlSlider.addEventListener('input', () => {
   pendingTimeControlMinutes = Number(timeControlSlider.value);
   timeControlValue.textContent = `${pendingTimeControlMinutes} min`;
+});
+
+// ===== Selector de variante del tablero =====
+document.querySelectorAll<HTMLButtonElement>('.variant-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    pendingBoardVariant = btn.dataset.variant as BoardVariant;
+    document.querySelectorAll('.variant-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
 });
 
 document.getElementById('modeLocalBtn')!.addEventListener('click', startLocal);
@@ -506,7 +520,8 @@ function renderRoomsList(rooms: LobbyRoom[]) {
     const row = document.createElement('div');
     row.className = 'room-row';
     const label = document.createElement('span');
-    label.textContent = `${room.hostName} · ${room.timeControlMinutes} min`;
+    const variantLabel = room.boardVariant === 'dominicana' ? 'Dominicana' : 'Estándar';
+    label.textContent = `${room.hostName} · ${room.timeControlMinutes} min · ${variantLabel}`;
     const btn = document.createElement('button');
     btn.className = 'btn';
     btn.textContent = 'Pedir unirse';
@@ -537,8 +552,9 @@ const network = new NetworkClient({
     connStatus.className = 'status-line warn';
   },
   onLobbyUpdate: (rooms) => renderRoomsList(rooms),
-  onRoomCreated: (code) => {
+  onRoomCreated: (code, _color, _timeControlMinutes, boardVariant) => {
     currentRoomCode = code;
+    pendingBoardVariant = boardVariant;
     resetOnlineSubcards();
     createRoomBtn.disabled = true;
     hostWaitingCard.style.display = 'flex';
@@ -558,14 +574,14 @@ const network = new NetworkClient({
     onlineStatus.className = 'status-line warn';
     currentRoomCode = null;
   },
-  onMatchStarted: (code, color, timeControlMinutes, opponentName) => {
+  onMatchStarted: (code, color, timeControlMinutes, opponentName, boardVariant) => {
     currentRoomCode = code;
     resetOnlineSubcards();
     onlineStatus.textContent = '';
     showScreen('game');
     overlay.classList.remove('show');
     logEl.innerHTML = '';
-    game.reset('online', { myColor: color, timeControlMinutes, opponentName });
+    game.reset('online', { myColor: color, timeControlMinutes, opponentName, boardVariant });
     startClockInterval();
   },
   onState: (state: RoomStateMsg) => {
@@ -602,7 +618,7 @@ createRoomBtn.addEventListener('click', () => {
     onlineStatus.className = 'status-line warn';
     return;
   }
-  network.createRoom(pendingTimeControlMinutes);
+  network.createRoom(pendingTimeControlMinutes, pendingBoardVariant);
 });
 
 cancelHostBtn.addEventListener('click', () => {

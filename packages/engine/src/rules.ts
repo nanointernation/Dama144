@@ -4,6 +4,16 @@
 export const SIZE = 12;
 export type Player = 'B' | 'N'; // Blancas | Negras
 
+/**
+ * 'estandar': la diagonal jugable es la que va de la esquina superior
+ * derecha a la inferior izquierda (convencion internacional habitual).
+ * 'dominicana': se usa la diagonal contraria (empezando en la primera
+ * casilla de la derecha de la fila superior), como en algunos tableros
+ * fisicos de dama dominicana. Es un cambio real de que casillas son
+ * jugables, no solo un cambio de color.
+ */
+export type BoardVariant = 'estandar' | 'dominicana';
+
 export interface Piece {
   player: Player;
   king: boolean;
@@ -41,15 +51,16 @@ export function inBounds(r: number, c: number): boolean {
   return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
 }
 
-export function isDark(r: number, c: number): boolean {
-  return (r + c) % 2 === 1;
+export function isDark(r: number, c: number, variant: BoardVariant = 'estandar'): boolean {
+  const base = (r + c) % 2 === 1;
+  return variant === 'dominicana' ? !base : base;
 }
 
-export function createInitialBoard(): Board {
+export function createInitialBoard(variant: BoardVariant = 'estandar'): Board {
   const board: Board = Array.from({ length: SIZE }, () => Array<Cell>(SIZE).fill(null));
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
-      if (!isDark(r, c)) continue;
+      if (!isDark(r, c, variant)) continue;
       if (r <= 4) board[r][c] = { player: 'N', king: false };
       if (r >= 7) board[r][c] = { player: 'B', king: false };
     }

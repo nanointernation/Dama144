@@ -3,6 +3,7 @@ import {
   Player,
   Sequence,
   SIZE,
+  BoardVariant,
   createInitialBoard,
   cloneBoard,
   legalMovesForPlayer,
@@ -60,6 +61,8 @@ export class GameController {
   aiColor: Player | null = null;
   /** En modo online: apodo del rival, para mostrarlo en vez de solo "Blancas"/"Negras". */
   opponentName: string | null = null;
+  /** Que diagonal se usa como jugable: 'estandar' o 'dominicana' (afecta colocacion inicial y color). */
+  boardVariant: BoardVariant = 'estandar';
 
   clock: ChessClock = new ChessClock(DEFAULT_TIME_CONTROL_MINUTES * 60000);
   timeControlMinutes: number = DEFAULT_TIME_CONTROL_MINUTES;
@@ -68,14 +71,21 @@ export class GameController {
 
   reset(
     mode: Mode,
-    opts: { myColor?: Player; aiColor?: Player; timeControlMinutes?: number; opponentName?: string } = {}
+    opts: {
+      myColor?: Player;
+      aiColor?: Player;
+      timeControlMinutes?: number;
+      opponentName?: string;
+      boardVariant?: BoardVariant;
+    } = {}
   ) {
     this.mode = mode;
     this.myColor = opts.myColor ?? null;
     this.aiColor = opts.aiColor ?? null;
     this.opponentName = opts.opponentName ?? null;
     this.timeControlMinutes = opts.timeControlMinutes ?? DEFAULT_TIME_CONTROL_MINUTES;
-    this.board = createInitialBoard();
+    this.boardVariant = opts.boardVariant ?? 'estandar';
+    this.board = createInitialBoard(this.boardVariant);
     this.turn = 'B';
     this.selected = null;
     this.gameOver = false;

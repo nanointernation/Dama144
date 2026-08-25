@@ -30,6 +30,7 @@ export function renderBoard(game: GameController, boardEl: HTMLElement, onSquare
   const lastMove = game.lastMove;
   const mandatory = game.mandatory;
   const flip = game.mode === 'online' && game.myColor === 'N';
+  const variant = game.boardVariant;
 
   const shouldAnimate = lastMove !== null && game.moveSeq !== lastAnimatedSeq;
 
@@ -51,7 +52,7 @@ export function renderBoard(game: GameController, boardEl: HTMLElement, onSquare
       const dispC = flip ? SIZE - 1 - screenC : screenC;
 
       const sq = document.createElement('div');
-      sq.className = 'sq ' + (isDark(dispR, dispC) ? 'dark' : 'light');
+      sq.className = 'sq ' + (isDark(dispR, dispC, variant) ? 'dark' : 'light');
       sq.dataset.r = String(dispR);
       sq.dataset.c = String(dispC);
 
