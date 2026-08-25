@@ -36,6 +36,7 @@ interface LastMove {
   c: number;
   fromR: number;
   fromC: number;
+  captured: { r: number; c: number }[];
 }
 
 type RoomStatus = 'waiting' | 'pending' | 'playing' | 'finished';
@@ -309,8 +310,17 @@ io.on('connection', (socket: Socket) => {
     }
 
     const lastStep = match.steps[match.steps.length - 1];
+    const capturedCells = match.steps
+      .filter((s) => s.capR !== undefined)
+      .map((s) => ({ r: s.capR as number, c: s.capC as number }));
     room.board = applySequence(room.board, match);
-    room.lastMove = { r: lastStep.toR, c: lastStep.toC, fromR: match.startR, fromC: match.startC };
+    room.lastMove = {
+      r: lastStep.toR,
+      c: lastStep.toC,
+      fromR: match.startR,
+      fromC: match.startC,
+      captured: capturedCells,
+    };
     room.turn = otherPlayer(room.turn);
     room.lastTickAt = now;
     room.hasMoved = true;

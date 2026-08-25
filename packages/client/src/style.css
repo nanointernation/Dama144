@@ -103,6 +103,14 @@ h1.title{
 .piece.king::before{ content:'♛'; }
 .piece.selected-piece{ transform: scale(1.08); outline:2px solid var(--brass-hi); outline-offset:2px; }
 .piece:hover{ transform: scale(1.05); }
+.piece.capture-fade{
+  transition: opacity 320ms ease, transform 320ms ease;
+  pointer-events: none;
+}
+.piece.capture-fade.fade-out{
+  opacity: 0;
+  transform: scale(0.25) rotate(15deg);
+}
 
 .side-panel{ width:280px; display:flex; flex-direction:column; gap:16px; }
 .panel-card{

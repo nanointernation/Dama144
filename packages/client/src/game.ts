@@ -15,6 +15,14 @@ import { ChessClock } from './clock';
 export type Mode = 'local' | 'ai' | 'online';
 export type RoomStatus = 'waiting' | 'pending' | 'playing' | 'finished';
 
+export interface LastMoveInfo {
+  r: number;
+  c: number;
+  fromR: number;
+  fromC: number;
+  captured: { r: number; c: number }[];
+}
+
 interface Selected {
   startR: number;
   startC: number;
@@ -41,7 +49,9 @@ export class GameController {
   activeSequences: Sequence[] = [];
   mandatory = false;
   gameOver = false;
-  lastMove: { r: number; c: number; fromR: number; fromC: number } | null = null;
+  lastMove: LastMoveInfo | null = null;
+  /** Se incrementa cada vez que hay un movimiento real (no en re-renders cosmeticos). render.ts lo usa para saber cuando animar. */
+  moveSeq = 0;
 
   mode: Mode = 'local';
   /** En modo online: el color que controla ESTE cliente. En local/ai: null (ambos lados clicables). */
@@ -82,7 +92,7 @@ export class GameController {
   applyRemoteState(
     board: Board,
     turn: Player,
-    lastMove: GameController['lastMove'],
+    lastMove: LastMoveInfo | null,
     clocks: { B: number; N: number },
     status: RoomStatus
   ) {
@@ -90,6 +100,7 @@ export class GameController {
     this.turn = turn;
     this.selected = null;
     this.lastMove = lastMove;
+    if (lastMove) this.moveSeq++;
     this.clock.setRemaining(clocks);
     // El reloj solo corre si la partida esta en curso Y ya se jugo al menos
     // una jugada (lastMove !== null). Antes de la primera jugada, se muestra
@@ -244,9 +255,13 @@ export class GameController {
   }
 
   applyLocally(seq: Sequence) {
-    const capturedCount = seq.steps.filter((s) => s.capR !== undefined).length;
+    const capturedCells = seq.steps
+      .filter((s) => s.capR !== undefined)
+      .map((s) => ({ r: s.capR as number, c: s.capC as number }));
+    const capturedCount = capturedCells.length;
     const lastStep = seq.steps[seq.steps.length - 1];
-    this.lastMove = { r: lastStep.toR, c: lastStep.toC, fromR: seq.startR, fromC: seq.startC };
+    this.lastMove = { r: lastStep.toR, c: lastStep.toC, fromR: seq.startR, fromC: seq.startC, captured: capturedCells };
+    this.moveSeq++;
     this.board = applySequence(this.board, seq);
 
     if (capturedCount > 0) {

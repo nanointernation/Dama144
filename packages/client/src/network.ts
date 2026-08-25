@@ -13,7 +13,7 @@ export interface LobbyRoom {
 export interface RoomStateMsg {
   board: Board;
   turn: Player;
-  lastMove: { r: number; c: number; fromR: number; fromC: number } | null;
+  lastMove: { r: number; c: number; fromR: number; fromC: number; captured: { r: number; c: number }[] } | null;
   clocks: { B: number; N: number };
   timeControlMinutes: number;
   status: 'waiting' | 'pending' | 'playing' | 'finished';
