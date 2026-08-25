@@ -433,11 +433,23 @@ const game = new GameController({
   onRequestAiMove: (board: Board, player: Player) => {
     if (pendingDifficulty === 'neuronal') {
       if (!neuralAiWorker) neuralAiWorker = new Worker(new URL('./neural-ai-worker.ts', import.meta.url), { type: 'module' });
+      let settled = false;
+      const watchdog = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        neuralAiWorker?.removeEventListener('message', handler);
+        showNeuralAiFailure(
+          'La IA neuronal no respondió a tiempo. Es probable que aún no exista un modelo entrenado publicado.'
+        );
+      }, 15000);
       const handler = (ev: MessageEvent<{ move: Sequence | null; error?: string }>) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(watchdog);
         neuralAiWorker?.removeEventListener('message', handler);
         if (ev.data.error) {
-          onlineStatus.textContent = ev.data.error;
-          onlineStatus.className = 'status-line warn';
+          showNeuralAiFailure(ev.data.error);
+          return;
         }
         if (ev.data.move) game.applyLocally(ev.data.move);
       };
@@ -489,6 +501,19 @@ function startAi(difficulty: AnyDifficulty) {
     boardVariant: pendingBoardVariant,
   });
   startClockInterval();
+}
+
+/**
+ * Muestra un aviso IMPOSIBLE de perder cuando la IA neuronal falla (por
+ * ejemplo, si aun no existe un modelo entrenado publicado). Antes este
+ * aviso solo se escribia en un texto escondido del menu, lo que hacia
+ * parecer que el juego se habia colgado sin explicacion.
+ */
+function showNeuralAiFailure(message: string) {
+  stopClockInterval();
+  overlayTitle.textContent = 'La IA neuronal no pudo jugar';
+  overlayText.textContent = message;
+  overlay.classList.add('show');
 }
 
 // ===== Selector de tiempo =====
@@ -658,6 +683,12 @@ document.getElementById('overlayRestart')!.addEventListener('click', () => {
   if (game.mode === 'local') startLocal();
   else if (game.mode === 'ai') startAi(pendingDifficulty);
   else goToMenu();
+});
+
+document.getElementById('overlayBackToMenu')!.addEventListener('click', () => {
+  overlay.classList.remove('show');
+  if (game.mode === 'online' && currentRoomCode) network.leaveMatch(currentRoomCode);
+  goToMenu();
 });
 
 function goToMenu() {
