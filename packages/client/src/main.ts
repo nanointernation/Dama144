@@ -442,7 +442,7 @@ const game = new GameController({
         if (ev.data.move) game.applyLocally(ev.data.move);
       };
       neuralAiWorker.addEventListener('message', handler);
-      neuralAiWorker.postMessage({ board, player });
+      neuralAiWorker.postMessage({ board, player, remainingMs: game.getClockValues()[player] });
       return;
     }
     if (!aiWorker) aiWorker = new Worker(new URL('./ai-worker.ts', import.meta.url), { type: 'module' });

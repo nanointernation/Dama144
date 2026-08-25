@@ -8,7 +8,19 @@ import { legalMovesForPlayer } from '@dama144/engine';
 // aqui el resultado), el worker responde con un error claro en vez de fallar
 // en silencio o trabar la interfaz.
 const MODEL_URL = '/models/dama144-az/model.json';
-const MCTS_SIMULATIONS = 120;
+
+// Techo de simulaciones (nunca se pasa de aqui aunque quede mucho tiempo en
+// el reloj); el limite real, casi siempre, lo pone el presupuesto de tiempo
+// de abajo, no este numero.
+const MAX_SIMULATIONS = 60;
+
+// El "pensar" de la IA neuronal descuenta de SU PROPIO reloj (igual que le
+// pasaria a un humano). Por eso el tiempo de pensamiento se calcula como una
+// fraccion pequeña del tiempo que le queda, con un techo y un piso, para que
+// nunca se quede sin tiempo por pensar de mas en una sola jugada.
+const MAX_THINK_MS = 3500;
+const MIN_THINK_MS = 300;
+const THINK_FRACTION_OF_REMAINING = 0.04; // ~4% del tiempo restante por jugada
 
 let modelPromise: Promise<tf.LayersModel> | null = null;
 
@@ -19,11 +31,19 @@ function getModel(): Promise<tf.LayersModel> {
   return modelPromise;
 }
 
-self.onmessage = async (ev: MessageEvent<{ board: Board; player: Player }>) => {
-  const { board, player } = ev.data;
+function computeThinkTimeMs(remainingMs: number | undefined): number {
+  if (remainingMs === undefined) return MAX_THINK_MS;
+  const budget = remainingMs * THINK_FRACTION_OF_REMAINING;
+  return Math.min(MAX_THINK_MS, Math.max(MIN_THINK_MS, budget));
+}
+
+self.onmessage = async (ev: MessageEvent<{ board: Board; player: Player; remainingMs?: number }>) => {
+  const { board, player, remainingMs } = ev.data;
   try {
     const model = await getModel();
-    const { visitCounts } = await runMcts(board, player, model, MCTS_SIMULATIONS);
+    const thinkTimeMs = computeThinkTimeMs(remainingMs);
+    const deadline = Date.now() + thinkTimeMs;
+    const { visitCounts } = await runMcts(board, player, model, MAX_SIMULATIONS, deadline);
 
     const legal = legalMovesForPlayer(board, player);
     let bestIdx = -1;

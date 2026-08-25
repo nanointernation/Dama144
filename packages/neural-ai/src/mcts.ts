@@ -92,17 +92,25 @@ function selectChild(node: MctsNode): [number, { node: MctsNode | null; seq: Seq
   return [bestIdx, bestChild!];
 }
 
-/** Corre `numSimulations` simulaciones desde `root` y devuelve la distribucion de visitas (la "politica mejorada"). */
+/**
+ * Corre hasta `maxSimulations` simulaciones desde `root` (o hasta que se
+ * acabe el tiempo, si se indica `deadline`), y devuelve la distribucion de
+ * visitas (la "politica mejorada"). El limite de tiempo es importante en
+ * partidas con reloj: el tiempo que la IA piensa se descuenta de su propio
+ * reloj, asi que no puede pensar indefinidamente.
+ */
 export async function runMcts(
   rootBoard: Board,
   rootPlayer: Player,
   model: tf.LayersModel,
-  numSimulations: number
+  maxSimulations: number,
+  deadline?: number
 ): Promise<{ root: MctsNode; visitCounts: Map<number, number> }> {
   const root = createNode(rootBoard, rootPlayer);
   await expand(root, model);
 
-  for (let sim = 0; sim < numSimulations; sim++) {
+  for (let sim = 0; sim < maxSimulations; sim++) {
+    if (deadline !== undefined && Date.now() >= deadline) break;
     const path: { node: MctsNode; idx: number; child: ReturnType<typeof selectChild>[1] }[] = [];
     let current = root;
 
