@@ -89,6 +89,12 @@ h1.title{
   display:flex; align-items:center; justify-content:center;
   font-family:'Cormorant Garamond', serif; font-weight:700; font-size:15px;
   transition: transform 0.12s ease;
+  touch-action: none;
+  user-select: none;
+}
+.piece.dragging{
+  cursor: grabbing !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.55) !important;
 }
 .piece.p-B{
   background: radial-gradient(circle at 32% 28%, #fffaf0, var(--piece-light) 55%, #e0d0ac 100%);

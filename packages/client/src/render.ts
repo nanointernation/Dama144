@@ -52,6 +52,8 @@ export function renderBoard(game: GameController, boardEl: HTMLElement, onSquare
 
       const sq = document.createElement('div');
       sq.className = 'sq ' + (isDark(dispR, dispC) ? 'dark' : 'light');
+      sq.dataset.r = String(dispR);
+      sq.dataset.c = String(dispC);
 
       if (
         lastMove &&
@@ -69,7 +71,11 @@ export function renderBoard(game: GameController, boardEl: HTMLElement, onSquare
       if (piece) {
         const pd = document.createElement('div');
         pd.className = 'piece p-' + piece.player + (piece.king ? ' king' : '');
-        if (clickableStarts.has(`${dispR},${dispC}`)) pd.style.cursor = 'pointer';
+        const interactive = clickableStarts.has(`${dispR},${dispC}`) || (selectedPos && selectedPos.r === dispR && selectedPos.c === dispC);
+        if (interactive) {
+          pd.style.cursor = 'grab';
+          attachDragBehavior(pd, dispR, dispC, game, boardEl, flip, onSquareClick);
+        }
         if (selectedPos && selectedPos.r === dispR && selectedPos.c === dispC) pd.classList.add('selected-piece');
         sq.appendChild(pd);
       }
@@ -127,4 +133,87 @@ export function renderBoard(game: GameController, boardEl: HTMLElement, onSquare
   }
 
   lastAnimatedSeq = game.moveSeq;
+}
+
+const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * Permite arrastrar una ficha con el mouse (o el dedo, via Pointer Events)
+ * en vez de dar dos clics. Al soltar sobre una casilla, dispara exactamente
+ * el mismo "onSquareClick" que usaria un clic normal — reutiliza toda la
+ * logica de reglas/turnos/capturas en cadena sin duplicar nada.
+ */
+function attachDragBehavior(
+  pieceEl: HTMLElement,
+  originR: number,
+  originC: number,
+  game: GameController,
+  boardEl: HTMLElement,
+  flip: boolean,
+  onSquareClick: (r: number, c: number) => void
+) {
+  pieceEl.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (e.button !== undefined && e.button !== 0) return; // solo boton principal / toque
+    e.preventDefault();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    // Selecciona la ficha (si aun no lo estaba) reutilizando la misma logica
+    // que un clic normal. Esto puede disparar un re-render interno, asi que
+    // volvemos a ubicar el elemento real de la ficha despues de esta llamada.
+    onSquareClick(originR, originC);
+
+    const curPos = game.getSelectedCurrentPos();
+    if (!curPos) return; // no se pudo seleccionar (sin jugadas disponibles)
+
+    const screenIdxNow = (function () {
+      const sr = flip ? SIZE - 1 - curPos.r : curPos.r;
+      const sc = flip ? SIZE - 1 - curPos.c : curPos.c;
+      return sr * SIZE + sc;
+    })();
+    const curSquare = boardEl.children[screenIdxNow] as HTMLElement | undefined;
+    const curPiece = curSquare?.querySelector('.piece') as HTMLElement | null;
+    if (!curPiece) return;
+
+    let dragging = false;
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!dragging && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+        dragging = true;
+        curPiece!.classList.add('dragging');
+        curPiece!.style.zIndex = '50';
+      }
+      if (dragging) {
+        curPiece!.style.transition = 'none';
+        curPiece!.style.transform = `translate(${dx}px, ${dy}px) scale(1.12)`;
+      }
+    }
+
+    function onUp(ev: PointerEvent) {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      if (!dragging) return;
+
+      curPiece!.classList.remove('dragging');
+      curPiece!.style.transform = '';
+      curPiece!.style.zIndex = '';
+      curPiece!.style.transition = '';
+
+      const target = document.elementFromPoint(ev.clientX, ev.clientY);
+      const sq = target?.closest('.sq') as HTMLElement | null;
+      if (sq && sq.dataset.r !== undefined && sq.dataset.c !== undefined) {
+        onSquareClick(Number(sq.dataset.r), Number(sq.dataset.c));
+      } else {
+        game.render();
+      }
+    }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  });
 }
